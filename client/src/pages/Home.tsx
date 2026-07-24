@@ -15,11 +15,11 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
   };
 
   const workflowSteps = [
-    { title: "Report Issue", icon: <Camera size={22} className="text-primary" /> },
-    { title: "AI Analysis", icon: <BrainCircuit size={22} className="text-blue-400" /> },
-    { title: "AI Prioritizes", icon: <ListChecks size={22} className="text-indigo-400" /> },
-    { title: "Authority Reviews", icon: <HardHat size={22} className="text-amber-500" /> },
-    { title: "Issue Resolved", icon: <Sprout size={22} className="text-emerald-500" /> },
+    { title: t('home.step1', 'Report Issue'), icon: <Camera size={22} className="text-primary" /> },
+    { title: t('home.step2', 'AI Analysis'), icon: <BrainCircuit size={22} className="text-blue-400" /> },
+    { title: t('home.step3', 'AI Prioritizes'), icon: <ListChecks size={22} className="text-indigo-400" /> },
+    { title: t('home.step4', 'Authority Reviews'), icon: <HardHat size={22} className="text-amber-500" /> },
+    { title: t('home.step5', 'Issue Resolved'), icon: <Sprout size={22} className="text-emerald-500" /> },
   ];
 
   return (
@@ -30,7 +30,7 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
         
         {/* Premium Background Effects */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] md:w-[900px] h-[400px] md:h-[500px] bg-blue-500/15 rounded-full blur-[140px] pointer-events-none" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px),linear-gradient(to_bottom,#ffffff03_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_80%,transparent_100%)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px),gradient(to_bottom,#ffffff03_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_80%,transparent_100%)] pointer-events-none" />
 
         <div className="flex flex-col items-center justify-center w-full max-w-[1200px] mx-auto z-10 relative text-center">
           
@@ -41,7 +41,7 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
             className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs md:text-sm font-bold tracking-wide mb-6"
           >
             <Zap size={16} />
-            <span>AI-Driven Civic Intelligence Engine</span>
+            <span>{t('home.badge', 'AI-Driven Civic Intelligence Engine')}</span>
           </motion.div>
 
           <motion.h1 
@@ -121,19 +121,19 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
           >
             <div className="p-3 md:p-4 bg-card/60 border border-border rounded-2xl text-center">
               <span className="text-xl md:text-3xl font-extrabold text-primary block">98%</span>
-              <span className="text-xs text-muted-foreground font-medium">Vision Accuracy</span>
+              <span className="text-xs text-muted-foreground font-medium">{t('home.accuracy', 'Vision Accuracy')}</span>
             </div>
             <div className="p-3 md:p-4 bg-card/60 border border-border rounded-2xl text-center">
               <span className="text-xl md:text-3xl font-extrabold text-blue-400 block">24h</span>
-              <span className="text-xs text-muted-foreground font-medium">Avg Resolution</span>
+              <span className="text-xs text-muted-foreground font-medium">{t('home.avgRes', 'Avg Resolution')}</span>
             </div>
             <div className="p-3 md:p-4 bg-card/60 border border-border rounded-2xl text-center">
               <span className="text-xl md:text-3xl font-extrabold text-emerald-400 block">10k+</span>
-              <span className="text-xs text-muted-foreground font-medium">Citizens Served</span>
+              <span className="text-xs text-muted-foreground font-medium">{t('home.citizensServed', 'Citizens Served')}</span>
             </div>
             <div className="p-3 md:p-4 bg-card/60 border border-border rounded-2xl text-center">
-              <span className="text-xl md:text-3xl font-extrabold text-amber-400 block">Zero</span>
-              <span className="text-xs text-muted-foreground font-medium">Manual Friction</span>
+              <span className="text-xl md:text-3xl font-extrabold text-amber-400 block">{t('home.zero', 'Zero')}</span>
+              <span className="text-xs text-muted-foreground font-medium">{t('home.zeroFriction', 'Manual Friction')}</span>
             </div>
           </motion.div>
         </div>
@@ -149,39 +149,39 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
             transition={{ duration: 0.6 }}
             className="text-center mb-12"
           >
-            <h2 className="text-3xl md:text-5xl font-bold mb-4">How AI Accelerates Resolution</h2>
-            <p className="text-base md:text-xl text-muted-foreground max-w-2xl mx-auto px-4">From a citizen's camera to a resolved community issue in record time.</p>
+            <h2 className="text-3xl md:text-5xl font-bold mb-4">{t('home.flowTitle', 'How AI Accelerates Resolution')}</h2>
+            <p className="text-base md:text-xl text-muted-foreground max-w-2xl mx-auto px-4">{t('home.flowSubtitle', "From a citizen's camera to a resolved community issue in record time.")}</p>
           </motion.div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 items-stretch relative w-full">
             <FlowStep 
               icon={<Camera size={28} />}
-              title="Citizen Reports"
-              desc="A resident spots an issue and snaps a quick photo."
+              title={t('home.flow1Title', '1. Report Issue')}
+              desc={t('home.flow1Desc', 'A resident spots an issue and snaps a quick photo.')}
               delay={0.1}
             />
             <FlowStep 
               icon={<BrainCircuit size={28} />}
-              title="AI Analysis"
-              desc="AI assesses the scene, detects objects, and verifies evidence."
+              title={t('home.flow2Title', '2. AI Analysis')}
+              desc={t('home.flow2Desc', 'AI assesses the scene, detects objects, and verifies evidence.')}
               delay={0.2}
             />
             <FlowStep 
               icon={<ListChecks size={28} />}
-              title="AI Prioritizes"
-              desc="The issue is scored by severity and routed to the correct department."
+              title={t('home.flow3Title', '3. AI Prioritizes')}
+              desc={t('home.flow3Desc', 'The issue is scored by severity and routed to the correct department.')}
               delay={0.3}
             />
             <FlowStep 
               icon={<HardHat size={28} />}
-              title="Authority Acts"
-              desc="Officers review the AI brief and dispatch a maintenance team."
+              title={t('home.flow4Title', '4. Authority Reviews')}
+              desc={t('home.flow4Desc', 'Officers review the AI brief and dispatch a maintenance team.')}
               delay={0.4}
             />
             <FlowStep 
               icon={<Sprout size={28} />}
-              title="Community Improves"
-              desc="The issue is resolved, and citizens are kept in the loop transparently."
+              title={t('home.flow5Title', '5. Issue Resolved')}
+              desc={t('home.flow5Desc', 'The issue is resolved, and citizens are kept in the loop transparently.')}
               delay={0.5}
             />
           </div>
@@ -203,30 +203,30 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
             <div className="flex-1 space-y-6">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20">
                 <BrainCircuit size={16} />
-                <span className="text-xs font-bold tracking-wider uppercase">Decision Intelligence</span>
+                <span className="text-xs font-bold tracking-wider uppercase">{t('home.impactTag', 'Decision Intelligence')}</span>
               </div>
-              <h3 className="text-3xl md:text-5xl font-bold leading-tight">Real-world impact.</h3>
+              <h3 className="text-3xl md:text-5xl font-bold leading-tight">{t('home.impactTitle', 'Real-world impact.')}</h3>
               <p className="text-base md:text-xl text-muted-foreground leading-relaxed">
-                A deep pothole reported on a busy intersection today gets resolved tomorrow morning, because CivicMind AI instantly flagged it as a <strong className="text-foreground">Critical Hazard</strong> and routed it directly to the Road Safety division before human dispatchers even arrived at the office.
+                {t('home.impactDesc', 'A deep pothole reported on a busy intersection today gets resolved tomorrow morning, because CivicMind AI instantly flagged it as a Critical Hazard and routed it directly to the Road Safety division before human dispatchers even arrived at the office.')}
               </p>
               <button 
                 onClick={() => onOpenChat()}
                 className="text-primary text-base md:text-lg font-bold flex items-center gap-2 hover:gap-4 transition-all group"
               >
-                Ask AI Assistant about risk prediction <ArrowRight size={20} className="group-hover:text-blue-400 transition-colors" />
+                {t('home.impactCTA', 'Ask AI Assistant about risk prediction')} <ArrowRight size={20} className="group-hover:text-blue-400 transition-colors" />
               </button>
             </div>
             
             <div className="flex-1 w-full bg-background/80 rounded-3xl border border-border p-6 md:p-8 shadow-inner relative overflow-hidden">
               <div className="absolute top-0 left-0 w-2 h-full bg-destructive" />
               <div className="flex items-center justify-between mb-6 pb-4 border-b border-border/50">
-                <span className="font-bold text-base md:text-lg text-foreground">AI Evidence Assessment</span>
-                <span className="px-3 py-1 bg-destructive/10 text-destructive text-xs md:text-sm font-black tracking-widest rounded uppercase">Critical</span>
+                <span className="font-bold text-base md:text-lg text-foreground">{t('home.assessmentTitle', 'AI Evidence Assessment')}</span>
+                <span className="px-3 py-1 bg-destructive/10 text-destructive text-xs md:text-sm font-black tracking-widest rounded uppercase">{t('home.critical', 'Critical')}</span>
               </div>
               <div className="space-y-6">
                 <div className="space-y-2">
                   <div className="flex justify-between text-xs md:text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                    <span>Analysis Confidence</span>
+                    <span>{t('home.confidence', 'Analysis Confidence')}</span>
                     <span className="text-foreground">95%</span>
                   </div>
                   <div className="h-3 w-full bg-secondary rounded-full overflow-hidden">
@@ -240,9 +240,9 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
                   </div>
                 </div>
                 <div className="p-4 md:p-5 bg-secondary/50 rounded-2xl border border-border">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Automated Reasoning</h4>
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('home.reasoningTitle', 'Automated Reasoning')}</h4>
                   <p className="text-xs md:text-sm font-medium leading-relaxed">
-                    Image evidence confirms severe road displacement (depth ~15cm) on a high-density primary artery. High risk of immediate vehicle damage and public traffic accidents.
+                    {t('home.reasoningText', 'Image evidence confirms severe road displacement (depth ~15cm) on a high-density primary artery. High risk of immediate vehicle damage and public traffic accidents.')}
                   </p>
                 </div>
               </div>
@@ -257,18 +257,18 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
           <div>
             <h3 className="text-2xl font-extrabold text-foreground mb-2">CivicMind AI</h3>
             <p className="text-muted-foreground max-w-md text-sm leading-relaxed">
-              Transforming city maintenance through computer vision, automated evidence verification, and predictive civic intelligence.
+              {t('home.footerDesc', 'Transforming city maintenance through computer vision, automated evidence verification, and predictive civic intelligence.')}
             </p>
           </div>
           <div className="flex flex-wrap gap-4 md:justify-end text-sm font-semibold text-muted-foreground">
-            <a href="/report" className="hover:text-foreground transition-colors">Report Issue</a>
-            <a href="/track" className="hover:text-foreground transition-colors">Track Complaint</a>
-            <a href="/dashboard" className="hover:text-foreground transition-colors">Dashboard</a>
+            <a href="/report" className="hover:text-foreground transition-colors">{t('nav.report', 'Report Issue')}</a>
+            <a href="/issue" className="hover:text-foreground transition-colors">{t('nav.track', 'Track Complaint')}</a>
+            <a href="/dashboard" className="hover:text-foreground transition-colors">{t('nav.dashboard', 'Dashboard')}</a>
           </div>
         </div>
         <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row justify-between items-center text-xs text-muted-foreground/60 font-medium border-t border-border/40 pt-4 gap-2">
           <span>&copy; {new Date().getFullYear()} CivicMind AI</span>
-          <span>Powered by Google Gemini</span>
+          <span>{t('home.poweredBy', 'Powered by Google Gemini')}</span>
         </div>
       </footer>
     </div>
