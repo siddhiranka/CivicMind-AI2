@@ -111,16 +111,16 @@ const IssueDetails = () => {
   };
 
   const steps = [
-    { id: 'Reported', label: 'Reported', icon: <User size={16} /> },
-    { id: 'AI Reviewed', label: 'AI Evidence Verified', icon: <ShieldCheck size={16} /> },
+    { id: 'Reported', label: t('timeline.reported', 'Reported'), icon: <User size={16} /> },
+    { id: 'AI Reviewed', label: t('timeline.aiReview', 'AI Evidence Verified'), icon: <ShieldCheck size={16} /> },
     { 
       id: 'Officer Review', 
-      label: complaint?.status === 'Rejected' ? 'Rejected' : complaint?.status === 'Needs Manual Inspection' ? 'Manual Inspection Required' : complaint?.status === 'Needs More Evidence' ? 'More Evidence Required' : 'Officer Review', 
+      label: complaint?.status === 'Rejected' ? t('status.Rejected', 'Rejected') : complaint?.status === 'Needs Manual Inspection' ? t('status.Needs Manual Inspection', 'Manual Inspection Required') : complaint?.status === 'Needs More Evidence' ? t('status.Needs More Evidence', 'More Evidence Required') : t('timeline.officerAssigned', 'Officer Review'), 
       icon: ['Rejected', 'Needs Manual Inspection', 'Needs More Evidence'].includes(complaint?.status) ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />
     },
-    { id: 'Dept Assigned', label: 'Department Assigned', icon: <ChevronRight size={16} /> },
-    { id: 'In Progress', label: 'Work Started', icon: <Clock size={16} /> },
-    { id: 'Resolved', label: 'Resolved', icon: <Check size={16} /> }
+    { id: 'Dept Assigned', label: t('issue.assignDepartment', 'Department Assigned'), icon: <ChevronRight size={16} /> },
+    { id: 'In Progress', label: t('timeline.inProgress', 'Work Started'), icon: <Clock size={16} /> },
+    { id: 'Resolved', label: t('timeline.resolved', 'Resolved'), icon: <Check size={16} /> }
   ];
 
   const getCompletedSteps = (status: string) => {
@@ -147,8 +147,8 @@ const IssueDetails = () => {
         {!id && (
           <>
             <div className="text-center mb-10 max-w-3xl mx-auto">
-              <h1 className="text-4xl font-bold mb-4">Track Resolution</h1>
-              <p className="text-muted-foreground text-lg">Enter your Complaint ID for complete transparency on your issue's status.</p>
+              <h1 className="text-4xl font-bold mb-4">{t('issue.searchTitle', 'Track Your Complaint')}</h1>
+              <p className="text-muted-foreground text-lg">{t('issue.searchSubtitle', 'Enter your Complaint ID for complete transparency on your issue\'s status.')}</p>
             </div>
             <form onSubmit={handleSearch} className="relative mb-12 max-w-3xl mx-auto">
               <div className="relative">
@@ -157,7 +157,7 @@ const IssueDetails = () => {
                   type="text"
                   value={complaintId}
                   onChange={(e) => setComplaintId(e.target.value.toUpperCase())}
-                  placeholder="e.g. CM-1234"
+                  placeholder={t('issue.searchPlaceholder', 'e.g. CM-1234')}
                   className="w-full bg-card border border-border rounded-full py-5 pl-16 pr-44 text-lg focus:ring-2 focus:ring-primary shadow-lg uppercase"
                 />
                 <div className="absolute right-2 top-2 bottom-2 flex items-center gap-2">
@@ -167,7 +167,7 @@ const IssueDetails = () => {
                     disabled={isSearching || !complaintId.trim()}
                     className="px-8 h-full bg-primary text-primary-foreground rounded-full font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center gap-2"
                   >
-                    {isSearching ? <Loader2 className="animate-spin" size={20} /> : 'Search'}
+                    {isSearching ? <Loader2 className="animate-spin" size={20} /> : t('issue.search', 'Search')}
                   </button>
                 </div>
               </div>
@@ -205,10 +205,10 @@ const IssueDetails = () => {
                     <ArrowLeft size={20} />
                   </button>
                   <div>
-                    <h1 className="text-3xl font-bold">{user?.role === 'officer' ? 'Officer Review Workspace' : 'Issue Details'}</h1>
+                    <h1 className="text-3xl font-bold">{user?.role === 'officer' ? t('issue.officerDecision', 'Officer Review Workspace') : t('issue.yourComplaint', 'Issue Details')}</h1>
                     <p className="text-muted-foreground flex items-center gap-2 mt-1">
-                      Complaint ID: <span className="font-semibold text-foreground">{complaint.complaintId}</span>
-                      <span className="text-xs px-2 py-0.5 bg-secondary rounded uppercase font-bold tracking-wider">{complaint.status}</span>
+                      {t('report.complaintId', 'Complaint ID')}: <span className="font-semibold text-foreground">{complaint.complaintId}</span>
+                      <span className="text-xs px-2 py-0.5 bg-secondary rounded uppercase font-bold tracking-wider">{String(t(`status.${complaint.status}`, complaint.status))}</span>
                     </p>
                   </div>
                 </div>
@@ -221,24 +221,24 @@ const IssueDetails = () => {
                   <div className="bg-card border border-border rounded-3xl overflow-hidden shadow-lg">
                     <div className="p-6 border-b border-border flex items-center gap-2 font-bold text-lg">
                       <User className="text-primary" size={20} />
-                      Citizen Evidence
+                      {t('report.step3', 'Citizen Evidence')}
                     </div>
                     <img src={complaint.imageUrl} alt="Evidence" className="w-full h-64 object-cover" />
                     <div className="p-6 space-y-6">
                       <div>
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">Reported Location</span>
+                        <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">{t('report.location', 'Reported Location')}</span>
                         <div className="flex items-start gap-2">
                           <MapPin size={18} className="text-primary shrink-0 mt-0.5" />
                           <p className="font-medium text-sm leading-relaxed">{complaint.location?.address || 'Unknown'}</p>
                         </div>
                         {complaint.evidence?.gpsAvailable && (
                           <span className="inline-block mt-2 text-[10px] uppercase font-bold tracking-wider px-2 py-1 bg-green-500/10 text-green-500 rounded">
-                            GPS Metadata Verified
+                            {t('issue.gpsVerified', 'GPS Metadata Verified')}
                           </span>
                         )}
                       </div>
                       <div>
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-2">Original Description</span>
+                        <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-2">{t('report.description', 'Original Description')}</span>
                         <p className="text-sm bg-secondary/30 p-4 rounded-xl border border-border italic text-muted-foreground">
                           "{complaint.originalDescription}"
                         </p>
@@ -247,7 +247,7 @@ const IssueDetails = () => {
                   </div>
 
                   <div className="bg-card border border-border rounded-3xl p-8 shadow-lg">
-                    <h3 className="text-lg font-bold mb-6">Resolution Timeline</h3>
+                    <h3 className="text-lg font-bold mb-6">{t('issue.timeline', 'Resolution Timeline')}</h3>
                     <div className="relative pl-4 space-y-8">
                       <div className="absolute top-2 bottom-2 left-[23px] w-0.5 bg-secondary -z-10" />
                       
