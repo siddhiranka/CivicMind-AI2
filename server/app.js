@@ -3,12 +3,15 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const { connectCloudinary } = require('./config/cloudinary');
+const seedDemoUsers = require('./utils/seedDemoUsers');
 
 // Load env vars
 dotenv.config();
 
 // Connect to databases
-connectDB();
+connectDB().then(() => {
+    seedDemoUsers();
+});
 connectCloudinary();
 
 const app = express();

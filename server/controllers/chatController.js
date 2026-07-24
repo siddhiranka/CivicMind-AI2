@@ -5,8 +5,10 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 exports.chatWithAI = async (req, res) => {
     try {
-        const { message } = req.body;
+        const { message, language } = req.body;
         if (!message) return res.status(400).json({ error: 'Message is required' });
+
+        const langName = language === 'hi' ? 'Hindi' : language === 'mr' ? 'Marathi' : 'English';
 
         // Fetch recent complaints to give the AI context
         const recentComplaints = await Complaint.find().sort({ createdAt: -1 }).limit(20);
@@ -50,7 +52,9 @@ exports.chatWithAI = async (req, res) => {
         **Action:** [Exact department to assign and what they should do]
         ━━━━━━━━━━━━━━━━━━
         
-        If the user's question isn't about solving an issue, adapt the format slightly to fit their question but KEEP the strict tabular/report look.`;
+        If the user's question isn't about solving an issue, adapt the format slightly to fit their question but KEEP the strict tabular/report look.
+        
+        CRITICAL LANGUAGE REQUIREMENT: You MUST respond ENTIRELY in ${langName}. Every single word of your response — including labels like "Priority:", "Reason:", "Confidence:", "Impact:", "Action:" — must be written in ${langName}. Do not mix any other language. Translate all labels, values, and reasoning into ${langName}.`;
 
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',

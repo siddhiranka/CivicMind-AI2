@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, X, Send, Bot, User, Trash2, Sparkles } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { useTranslation } from 'react-i18next';
+import VoiceInput from './VoiceInput';
 
 interface ChatBotProps {
   isOpen: boolean;
@@ -14,8 +16,9 @@ interface Message {
 }
 
 const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
+  const { t, i18n } = useTranslation();
   const defaultMessages: Message[] = [
-    { role: 'ai', content: "Hello! I'm CivicMind AI. Ask me about live community issues, priority recommendations, or predictive trends." }
+    { role: 'ai', content: t('chat.defaultMsg', "Hello! I'm CivicMind AI. Ask me about live community issues, priority recommendations, or predictive trends.") }
   ];
   const [messages, setMessages] = useState<Message[]>(defaultMessages);
   const [input, setInput] = useState('');
@@ -24,9 +27,10 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const suggestions = [
-    "Summarize all issues",
-    "What is the most critical issue?",
-    "Which areas need attention?"
+    t('chat.suggestions.urgent'),
+    t('chat.suggestions.report'),
+    t('chat.suggestions.unresolved'),
+    t('chat.suggestions.predict')
   ];
 
   const scrollToBottom = () => {
@@ -59,7 +63,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msgToSend.trim() })
+        body: JSON.stringify({ message: msgToSend.trim(), language: i18n.language })
       });
       const data = await res.json();
       
@@ -82,7 +86,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 50, scale: 0.9 }}
           transition={{ type: "spring", bounce: 0.3 }}
-          className="fixed bottom-24 right-6 w-[400px] md:w-[450px] h-[600px] bg-background/80 backdrop-blur-3xl border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-3xl flex flex-col overflow-hidden z-50 cursor-default"
+          className="fixed bottom-4 right-3 left-3 sm:left-auto sm:right-6 sm:bottom-24 w-auto sm:w-[440px] h-[80vh] sm:h-[600px] bg-background/90 backdrop-blur-3xl border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-3xl flex flex-col overflow-hidden z-50 cursor-default"
         >
           {/* Header */}
           <div className="p-4 bg-primary text-primary-foreground flex justify-between items-center cursor-grab active:cursor-grabbing border-b border-primary-foreground/20">
@@ -91,10 +95,10 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
               <h3 className="font-bold tracking-wide">CivicMind AI</h3>
             </div>
             <div className="flex items-center gap-1">
-              <button onClick={handleClear} className="hover:bg-primary-foreground/20 p-2 rounded-full transition-colors" title="Clear Chat">
+              <button onClick={handleClear} className="hover:bg-primary-foreground/20 p-2 rounded-full transition-colors" title={t('chat.clearChat')}>
                 <Trash2 size={18} />
               </button>
-              <button onClick={onClose} className="hover:bg-primary-foreground/20 p-2 rounded-full transition-colors" title="Close">
+              <button onClick={onClose} className="hover:bg-primary-foreground/20 p-2 rounded-full transition-colors" title={t('common.close')}>
                 <X size={20} />
               </button>
             </div>
@@ -143,22 +147,23 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
           )}
 
           {/* Input Area */}
-          <div className="p-4 bg-background/80 backdrop-blur-md border-t border-border flex gap-2">
+          <div className="p-4 bg-background/80 backdrop-blur-md border-t border-border flex gap-2 items-center">
             <input
               ref={inputRef}
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="Ask about live issues..."
+              placeholder={t('chat.placeholder')}
               className="flex-1 bg-secondary/50 border border-border rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm"
             />
+            <VoiceInput onResult={(text) => setInput(prev => prev ? `${prev} ${text}` : text)} />
             <button 
               onClick={() => handleSend()}
               disabled={!input.trim() || isTyping}
-              className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center hover:bg-primary/90 disabled:opacity-50"
+              className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center hover:bg-primary/90 disabled:opacity-50 shrink-0"
             >
-              <Send size={18} className="ml-1" />
+              <Send size={18} className="ml-0.5" />
             </button>
           </div>
         </motion.div>

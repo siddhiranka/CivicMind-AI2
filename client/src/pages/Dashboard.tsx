@@ -1,445 +1,312 @@
 import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { MapIcon, AlertTriangle, CheckCircle2, Info, FileText, Download, Filter, Search, Database, Bot, ChevronRight, MapPin, Activity } from 'lucide-react';
-import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { motion } from 'framer-motion';
+import { AlertTriangle, CheckCircle2, Search, Activity, ShieldCheck, MapIcon, ChevronRight, MapPin, Camera } from 'lucide-react';
+import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
+import { useNavigate } from 'react-router-dom';
+import ComplaintDrawer from '../components/ComplaintDrawer';
+import { useAuth } from '../context/AuthContext';
+import EmptyState from '../components/EmptyState';
+import { useTranslation } from 'react-i18next';
 
 const Dashboard = () => {
   const [complaints, setComplaints] = useState<any[]>([]);
   const [selectedComplaint, setSelectedComplaint] = useState<any>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isSeeding, setIsSeeding] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [mapCenter, setMapCenter] = useState({lat: 19.0760, lng: 72.8777});
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [mapCenter, setMapCenter] = useState({ lat: 19.0760, lng: 72.8777 });
   const [mapZoom, setMapZoom] = useState(11);
-
-  const fetchComplaints = () => {
-    fetch('/api/complaints')
-      .then(res => res.json())
-      .then(data => setComplaints(data))
-      .catch(err => console.error(err));
-  };
+  const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { t, i18n } = useTranslation();
 
   useEffect(() => {
-    fetchComplaints();
-  }, []);
-
-  useEffect(() => {
-    const handleSearch = async () => {
-      if (searchQuery.trim().length > 2) {
-         // 1. Try to find a specific complaint ID first
-         const result = complaints.find(c => 
-            (c.complaintId && c.complaintId.toLowerCase().includes(searchQuery.toLowerCase()))
-         );
-         
-         if (result && result.location?.lat) {
-             setMapCenter({lat: result.location.lat, lng: result.location.lng});
-             setMapZoom(16);
-             setSelectedComplaint(result);
-             return;
-         }
-
-         // 2. Otherwise, use Google Geocoding API for real-world locations
-         try {
-            const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-            if (!apiKey) return;
-            
-            const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchQuery)}&key=${apiKey}`);
-            const data = await res.json();
-            
-            if (data.status === "OK" && data.results.length > 0) {
-               const loc = data.results[0].geometry.location;
-               setMapCenter({lat: loc.lat, lng: loc.lng});
-               setMapZoom(13);
-               setSelectedComplaint(null);
-            }
-         } catch (e) {
-            console.error("Geocoding failed", e);
-         }
-      }
-    };
-
-    const timeoutId = setTimeout(() => {
-       handleSearch();
-    }, 800);
-
-    return () => clearTimeout(timeoutId);
-  }, [searchQuery, complaints]);
-
-  const handleSeed = async () => {
-    setIsSeeding(true);
-    try {
-      await fetch('/api/complaints/seed', { method: 'POST' });
-      fetchComplaints();
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsSeeding(false);
-    }
-  };
-
-  const handleAIQuery = (query: string) => {
-    window.dispatchEvent(new CustomEvent('open-chat'));
-    setTimeout(() => {
-       window.dispatchEvent(new CustomEvent('open-chat-msg', { detail: query }));
-    }, 100);
-  };
-
-  const handleExportPDF = async () => {
-    setIsExporting(true);
+    if (!user) return;
     
-    // Allow UI to update to show loading state before blocking the main thread
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    try {
-      const doc = new jsPDF();
-      
-      if (selectedComplaint) {
-        doc.setFontSize(20);
-        doc.text(`Incident Report: ${selectedComplaint.complaintId || 'Unknown'}`, 14, 22);
-        
-        doc.setFontSize(12);
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 32);
-        
-        doc.setFontSize(14);
-        doc.text('Issue Details', 14, 45);
-        
-        doc.setFontSize(12);
-        doc.text(`Issue: ${selectedComplaint.issueDetected || selectedComplaint.originalDescription || 'N/A'}`, 14, 55);
-        const addressText = doc.splitTextToSize(`Location: ${selectedComplaint.location?.address || 'N/A'}`, 180);
-        doc.text(addressText, 14, 65);
-        
-        const currentY = 65 + (addressText.length * 7);
-        
-        doc.text(`Severity: ${selectedComplaint.severity}`, 14, currentY);
-        doc.text(`Status: ${selectedComplaint.status}`, 14, currentY + 10);
-        doc.text(`Assigned Department: ${selectedComplaint.suggestedDepartment || 'Pending'}`, 14, currentY + 20);
-        
-        doc.setFontSize(14);
-        doc.text('AI Analysis', 14, currentY + 40);
-        
-        doc.setFontSize(12);
-        const splitText = doc.splitTextToSize(selectedComplaint.riskAnalysis || 'No analysis available.', 180);
-        doc.text(splitText, 14, currentY + 50);
-
-        doc.save(`Issue_Report_${selectedComplaint.complaintId || 'Custom'}.pdf`);
-      } else {
-        doc.setFontSize(20);
-        doc.text('CivicMind AI - Daily Issue Report', 14, 22);
-        
-        doc.setFontSize(12);
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 32);
-        
-        const tableData = complaints.map(c => [
-           c.complaintId || 'CM-XXXX',
-           c.issueDetected || c.originalDescription || 'N/A',
-           c.location?.address || 'N/A',
-           c.severity,
-           c.status
-        ]);
-
-        // @ts-ignore
-        autoTable(doc, {
-           startY: 40,
-           head: [['ID', 'Issue', 'Location', 'Priority', 'Status']],
-           body: tableData,
-        });
-
-        doc.save('CivicMind_Report.pdf');
+    setIsLoading(true);
+    fetch('/api/complaints', {
+      headers: {
+        'Authorization': `Bearer ${user.token}`,
+        'x-language': i18n.language
       }
-    } catch (err) {
-      console.error('PDF Generation Error:', err);
-      alert('Failed to generate PDF. Check console for details.');
-    } finally {
-      setIsExporting(false);
+    })
+      .then(res => res.json())
+      .then(data => {
+        // Handle array response
+        if (Array.isArray(data)) {
+          setComplaints(data);
+          if (data.length > 0 && data[0].location?.lat) {
+             setMapCenter({ lat: data[0].location.lat, lng: data[0].location.lng });
+          }
+        } else {
+          console.error("Expected array, got:", data);
+        }
+        setIsLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setIsLoading(false);
+      });
+  }, [user, i18n.language]);
+
+  const highestPriority = complaints.find(c => c.severity === 'Critical') || complaints[0];
+
+  const criticalCount = complaints.filter(c => c.severity === 'Critical').length;
+  const pendingCount = complaints.filter(c => c.status === 'Pending').length;
+  const resolvedCount = complaints.filter(c => c.status === 'Resolved').length;
+
+  const handleMarkerClick = (complaint: any) => {
+    setSelectedComplaint(complaint);
+    setIsDrawerOpen(true);
+    if (complaint.location?.lat) {
+      setMapCenter({ lat: complaint.location.lat, lng: complaint.location.lng });
+      setMapZoom(16);
     }
   };
 
-  // Dynamic Calculations
-  const newReports = complaints.filter(c => {
-     const today = new Date();
-     const reportDate = new Date(c.createdAt);
-     return reportDate.toDateString() === today.toDateString();
-  }).length;
-  
-  const criticalIssues = complaints.filter(c => c.severity === 'Critical' && c.status !== 'Resolved').length;
-  const resolvedToday = complaints.filter(c => c.status === 'Resolved' && new Date(c.updatedAt).toDateString() === new Date().toDateString()).length;
-  const pendingReview = complaints.filter(c => c.status === 'Pending').length;
-
-  // Most critical pending issue for Action Required
-  const actionRequired = complaints.filter(c => c.status === 'Pending').sort((a, b) => b.priorityScore - a.priorityScore)[0];
-
-  const handleApprove = async (id: string) => {
-     try {
-        await fetch(`/api/complaints/${id}/status`, {
-           method: 'PATCH',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ status: 'Assigned' })
-        });
-        fetchComplaints();
-     } catch (e) {
-        console.error(e);
-     }
+  const handleApprove = (id: string) => {
+    navigate(`/issue/${id}`);
   };
 
-  const getAISummary = () => {
-     if (complaints.length === 0) return "No community reports have been submitted yet. Once reports are received, AI insights and recommendations will appear here.";
-     if (criticalIssues > 0) return `There are ${criticalIssues} critical issues requiring immediate attention, primarily focused on ${actionRequired?.suggestedDepartment || 'infrastructure'}. Please review the Action Required panel.`;
-     return "Community conditions are stable. Ongoing issues are being monitored and processed by the assigned departments.";
-  };
+  if (isLoading) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] bg-background pt-20 pb-10">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="h-10 w-64 bg-secondary/50 rounded-lg animate-pulse mb-6" />
+          
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="p-6 bg-card border border-border rounded-2xl h-32 flex flex-col justify-between">
+                <div className="h-4 w-24 bg-secondary/50 rounded animate-pulse" />
+                <div className="h-10 w-16 bg-secondary/50 rounded animate-pulse mt-4" />
+              </div>
+            ))}
+          </div>
+
+          <div className="h-20 w-full bg-secondary/30 rounded-2xl animate-pulse mb-10 border border-border" />
+
+          <div className="h-64 w-full bg-card border border-border rounded-3xl animate-pulse mb-10 shadow-lg" />
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 h-[600px] bg-card border border-border rounded-3xl relative overflow-hidden flex flex-col items-center justify-center">
+              <div className="absolute inset-0 bg-gradient-to-br from-secondary/20 to-background animate-pulse" />
+              <MapIcon size={48} className="text-secondary opacity-50 mb-4 z-10" />
+              <div className="text-muted-foreground font-semibold tracking-wide z-10 flex flex-col items-center">
+                <span>Loading Interactive Map...</span>
+                <span className="text-sm opacity-60 mt-1">Fetching community data</span>
+                <div className="w-32 h-2 bg-secondary rounded-full mt-4 overflow-hidden">
+                  <div className="h-full bg-primary/50 rounded-full animate-[pulse_1s_ease-in-out_infinite]" style={{width: '60%'}} />
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-card border border-border rounded-3xl p-6 h-[600px] flex flex-col">
+              <div className="h-8 w-32 bg-secondary/50 rounded animate-pulse mb-6" />
+              <div className="space-y-4 flex-1">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="h-24 w-full bg-secondary/30 rounded-xl animate-pulse border border-border" />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-background text-foreground pb-20 pt-20">
-      <div className="max-w-7xl mx-auto px-4 md:px-8 space-y-8">
+    <div className="min-h-[calc(100vh-4rem)] bg-background text-foreground pt-4 md:pt-10 pb-10">
+      <div className="max-w-7xl mx-auto px-4 md:px-6">
         
-        {/* Header & Controls */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-           <div>
-              <h1 className="text-2xl font-bold">City Workflow Dashboard</h1>
-              <p className="text-muted-foreground">Manage and resolve live community reports</p>
-           </div>
-           <div className="flex flex-wrap items-center gap-3">
-              <div className="relative">
-                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
-                 <input 
-                    type="text"
-                    placeholder="Search ID, Location..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="bg-background border border-border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-48 lg:w-64"
-                 />
+        {/* Header & Overview */}
+        <div className="mb-6 md:mb-10">
+          <h1 className="text-2xl md:text-3xl font-extrabold mb-4 md:mb-6">
+            {user?.role === 'officer' ? t('dashboard.title') : t('dashboard.citizenTitle')}
+          </h1>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
+            <div className="p-6 bg-card border border-border rounded-2xl flex flex-col justify-between">
+              <span className="text-sm font-semibold text-muted-foreground tracking-wide uppercase">{t('dashboard.avgResolution')}</span>
+              <div className="flex items-end gap-2 mt-4">
+                <span className="text-4xl font-extrabold text-blue-400">24h</span>
+                <span className="text-sm text-green-500 font-medium mb-1">-2h {t('dashboard.thisWeek')}</span>
               </div>
-              <button onClick={handleExportPDF} disabled={isExporting} className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border rounded-lg text-sm font-medium hover:bg-secondary/80 disabled:opacity-50">
-                 {isExporting ? <div className="w-4 h-4 border-2 border-t-transparent border-foreground rounded-full animate-spin"></div> : <Download size={16}/>} 
-                 {isExporting ? 'Generating...' : 'Export PDF'}
-              </button>
-           </div>
+            </div>
+            
+            <div className="p-6 bg-card border border-border rounded-2xl flex flex-col justify-between">
+              <span className="text-sm font-semibold text-muted-foreground tracking-wide uppercase">{t('dashboard.critical')}</span>
+              <div className="flex items-end gap-2 mt-4">
+                <span className="text-4xl font-extrabold text-destructive">{criticalCount}</span>
+                <span className="text-sm text-destructive font-medium mb-1">{t('dashboard.needsAction')}</span>
+              </div>
+            </div>
+
+            <div className="p-6 bg-card border border-border rounded-2xl flex flex-col justify-between">
+              <span className="text-sm font-semibold text-muted-foreground tracking-wide uppercase">{t('dashboard.pendingReview')}</span>
+              <div className="flex items-end gap-2 mt-4">
+                <span className="text-4xl font-extrabold">{pendingCount}</span>
+              </div>
+            </div>
+
+            <div className="p-6 bg-card border border-border rounded-2xl flex flex-col justify-between">
+              <span className="text-sm font-semibold text-muted-foreground tracking-wide uppercase">{t('dashboard.resolvedToday')}</span>
+              <div className="flex items-end gap-2 mt-4">
+                <span className="text-4xl font-extrabold text-green-500">{resolvedCount}</span>
+              </div>
+            </div>
+          </div>
+
+          {user?.role === 'officer' && (
+            <div className="p-5 bg-primary/5 border border-primary/20 rounded-2xl flex gap-4 items-start">
+              <ShieldCheck className="text-primary shrink-0 mt-0.5" />
+              <p className="text-sm leading-relaxed font-medium">
+                <strong className="text-primary">{t('dashboard.aiSummary')}:</strong> Road infrastructure complaints have spiked by 18% in the northern district due to recent rainfall. It is recommended to deploy an additional maintenance team to sector 4 to prevent further traffic gridlock.
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* 1. Today's Overview */}
-        <div className="bg-card/40 border border-border rounded-2xl p-6 flex flex-col md:flex-row gap-8">
-           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 flex-1">
-              <div className="flex flex-col">
-                 <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">New Reports</span>
-                 <span className="text-4xl font-black">{newReports}</span>
+        {/* Hero Card: Highest Priority (Officer Only) */}
+        {user?.role === 'officer' && highestPriority && highestPriority.status !== 'Resolved' && (
+          <div className="mb-10 bg-card border border-destructive/30 rounded-3xl overflow-hidden shadow-xl flex flex-col md:flex-row relative min-h-[250px]">
+            <div className="absolute top-0 left-0 w-2 h-full bg-destructive z-10" />
+            <div className="md:w-1/3 h-48 md:h-auto border-r border-border relative bg-secondary/20 flex items-center justify-center">
+              {highestPriority.imageUrl ? (
+                <img src={highestPriority.imageUrl} alt="Critical Issue" className="absolute inset-0 w-full h-full object-cover" />
+              ) : (
+                <Camera size={40} className="text-muted-foreground opacity-30" />
+              )}
+              <div className="absolute top-4 left-4 px-3 py-1 bg-destructive text-destructive-foreground text-xs font-bold rounded shadow-lg uppercase tracking-wider">
+                {t('dashboard.criticalPriority')}
               </div>
-              <div className="flex flex-col">
-                 <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Critical Issues</span>
-                 <span className="text-4xl font-black text-destructive">{criticalIssues}</span>
+            </div>
+            
+            <div className="flex-1 p-8 flex flex-col justify-between">
+              <div>
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h2 className="text-2xl font-bold mb-1">{highestPriority.issueDetected || "Infrastructure Hazard"}</h2>
+                    <p className="text-muted-foreground flex items-center gap-1 text-sm"><MapPin size={14} /> {highestPriority.location?.address}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs text-muted-foreground uppercase font-semibold block mb-1">{t('dashboard.confidence')}</span>
+                    <span className="text-xl font-bold">{highestPriority.evidence?.overallStrength || 0}%</span>
+                  </div>
+                </div>
+                
+                <p className="text-sm bg-secondary/30 p-4 rounded-xl mb-6 border border-border leading-relaxed">
+                  <strong className="block mb-1 text-foreground">{t('dashboard.aiReasoning')}:</strong>
+                  {highestPriority.evidence?.sceneAnalysis || "Severe structural degradation detected. Immediate risk to public safety."}
+                </p>
               </div>
-              <div className="flex flex-col">
-                 <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Resolved Today</span>
-                 <span className="text-4xl font-black text-green-500">{resolvedToday}</span>
-              </div>
-              <div className="flex flex-col">
-                 <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Pending Review</span>
-                 <span className="text-4xl font-black text-amber-500">{pendingReview}</span>
-              </div>
-           </div>
-           <div className="md:w-1/3 bg-primary/10 p-4 rounded-xl border border-primary/20 flex flex-col justify-center">
-              <span className="text-xs font-bold text-primary uppercase tracking-wider mb-2 flex items-center gap-1"><Bot size={14}/> AI Summary</span>
-              <p className="text-sm font-medium leading-relaxed">{getAISummary()}</p>
-           </div>
-        </div>
 
-        {/* 2. Action Required */}
-        {actionRequired ? (
-           <div className="bg-card/80 border-2 border-destructive/30 rounded-2xl p-6 shadow-[0_0_20px_rgba(239,68,68,0.05)] flex flex-col lg:flex-row gap-6 items-start lg:items-center justify-between">
-              <div className="flex items-start gap-4 flex-1">
-                 <div className="w-12 h-12 rounded-full bg-destructive/10 text-destructive flex items-center justify-center shrink-0">
-                    <AlertTriangle size={24} />
-                 </div>
-                 <div>
-                    <span className="text-xs font-bold text-destructive uppercase tracking-wider mb-1 block">Action Required</span>
-                    <h2 className="text-xl font-bold mb-1">{actionRequired.originalDescription}</h2>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                       <span className="flex items-center gap-1"><MapPin size={14}/> {actionRequired.location?.address}</span>
-                       <span className="font-bold text-foreground">Priority: {actionRequired.severity}</span>
-                    </div>
-                    <div className="mt-4 p-3 bg-background rounded-lg border border-border text-sm">
-                       <span className="font-bold block mb-1">AI Reason:</span>
-                       {actionRequired.riskAnalysis}
-                    </div>
-                 </div>
+              <div className="flex items-center justify-between border-t border-border pt-6 mt-4">
+                <div>
+                  <span className="text-xs text-muted-foreground uppercase font-semibold block mb-1">{t('dashboard.routeTo')}</span>
+                  <span className="font-bold text-primary">{highestPriority.suggestedDepartment || "General Maintenance"}</span>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => navigate(`/issue/${highestPriority.complaintId}`)} className="px-6 py-2.5 rounded-lg border border-border font-semibold hover:bg-secondary transition-colors">
+                    {t('dashboard.viewDetails')}
+                  </button>
+                  <button onClick={() => handleApprove(highestPriority._id)} className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-bold hover:bg-primary/90 transition-colors shadow-lg">
+                    {t('dashboard.approveDispatch')}
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-col gap-3 min-w-[200px] w-full lg:w-auto">
-                 <div className="text-sm">
-                    <span className="text-muted-foreground block">Recommended Action:</span>
-                    <span className="font-bold">Assign {actionRequired.suggestedDepartment}</span>
-                 </div>
-                 <div className="flex gap-2 mt-2">
-                    <button onClick={() => handleApprove(actionRequired._id)} className="flex-1 py-2 bg-primary text-primary-foreground font-bold rounded-lg hover:bg-primary/90 text-sm">Approve</button>
-                    <button onClick={() => setSelectedComplaint(actionRequired)} className="flex-1 py-2 bg-secondary border border-border text-foreground font-bold rounded-lg hover:bg-secondary/80 text-sm">View Details</button>
-                 </div>
-              </div>
-           </div>
-        ) : (
-           <div className="bg-card/40 border border-border rounded-2xl p-6 flex flex-col items-center justify-center text-center h-32">
-              <CheckCircle2 size={32} className="text-green-500 mb-2" />
-              <p className="font-bold text-muted-foreground">No immediate action required right now.</p>
-           </div>
+            </div>
+          </div>
         )}
 
-        {/* 3. Live Map & Details */}
-        <div className="bg-card/40 border border-border rounded-2xl overflow-hidden flex flex-col lg:flex-row h-[600px]">
-           <div className="flex-1 relative border-b lg:border-b-0 lg:border-r border-border">
-              <div className="absolute top-4 left-4 z-10 bg-background/90 backdrop-blur-md px-4 py-2 rounded-lg border border-border shadow-sm flex items-center gap-2">
-                 <MapIcon size={16}/> <span className="font-bold text-sm">Live Incident Map</span>
-              </div>
-              <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
-                 <Map 
-                    center={mapCenter}
-                    zoom={mapZoom}
-                    mapId="DEMO_MAP_ID"
-                    colorScheme="DARK"
-                    onClick={() => setSelectedComplaint(null)}
-                 >
-                    {complaints.map((c, idx) => {
-                       if (!c.location || !c.location.lat) return null;
-                       const isCritical = c.severity === 'Critical' || c.severity === 'High';
-                       const isMedium = c.severity === 'Medium';
-                       let colorClass = 'bg-green-500';
-                       if (isCritical) colorClass = 'bg-red-500';
-                       else if (isMedium) colorClass = 'bg-yellow-500';
-
-                       return (
-                          <AdvancedMarker key={c._id || idx} position={{lat: c.location.lat, lng: c.location.lng}} onClick={() => setSelectedComplaint(c)}>
-                             <div className={`w-4 h-4 rounded-full border-2 border-white shadow-[0_0_10px_rgba(0,0,0,0.5)] cursor-pointer hover:scale-125 transition-transform ${colorClass}`} />
-                          </AdvancedMarker>
-                       );
-                    })}
-                 </Map>
-              </APIProvider>
-           </div>
-           
-           {/* Map Side Panel */}
-           <div className="w-full lg:w-96 bg-card overflow-y-auto">
-              {selectedComplaint ? (
-                 <div className="p-6">
-                    <div className="flex justify-between items-start mb-4">
-                       <h3 className="font-bold text-lg">{selectedComplaint.issueDetected || 'Reported Issue'}</h3>
-                       <button onClick={() => setSelectedComplaint(null)} className="text-muted-foreground hover:text-foreground">✕</button>
-                    </div>
-                    <img src={selectedComplaint.imageUrl} alt="Complaint" className="w-full h-40 object-cover rounded-xl mb-4" />
-                    
-                    <div className="space-y-4 text-sm">
-                       <div>
-                          <span className="text-muted-foreground block mb-1">Complaint ID</span>
-                          <span className="font-bold">{selectedComplaint.complaintId || 'Unknown'}</span>
-                       </div>
-                       <div className="grid grid-cols-2 gap-4">
-                          <div>
-                             <span className="text-muted-foreground block mb-1">Severity</span>
-                             <span className={`font-bold px-2 py-1 rounded-md text-xs ${selectedComplaint.severity === 'High' || selectedComplaint.severity === 'Critical' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-500'}`}>{selectedComplaint.severity}</span>
-                          </div>
-                          <div>
-                             <span className="text-muted-foreground block mb-1">Status</span>
-                             <span className="font-bold">{selectedComplaint.status}</span>
-                          </div>
-                       </div>
-                       <div>
-                          <span className="text-muted-foreground block mb-1">Assigned Department</span>
-                          <span className="font-bold">{selectedComplaint.suggestedDepartment || 'Pending'}</span>
-                       </div>
-                       <div>
-                          <span className="text-muted-foreground block mb-1">AI Reasoning</span>
-                          <p className="text-foreground/90">{selectedComplaint.riskAnalysis}</p>
-                       </div>
-                       <button className="w-full py-3 bg-secondary border border-border font-bold rounded-xl hover:bg-secondary/80 mt-4">
-                          Open Full Details
-                       </button>
-                    </div>
-                 </div>
-              ) : (
-                 <div className="p-6 h-full flex flex-col items-center justify-center text-center text-muted-foreground">
-                    <MapIcon size={48} className="mb-4 opacity-20" />
-                    <p>Click a marker on the map to view detailed information and AI recommendations.</p>
-                 </div>
-              )}
-           </div>
-        </div>
-
-        {/* Bottom Row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-           
-           {/* 4. Recent Reports Table */}
-           <div className="lg:col-span-2 bg-card/40 border border-border rounded-2xl overflow-hidden">
-              <div className="p-4 border-b border-border bg-card">
-                 <h3 className="font-bold flex items-center gap-2"><FileText size={18} /> Recent Reports</h3>
+          {/* Interactive Map */}
+          <div className="lg:col-span-2 h-[600px] bg-card border border-border rounded-3xl overflow-hidden relative shadow-lg">
+            {import.meta.env.VITE_GOOGLE_MAPS_API_KEY ? (
+              <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY}>
+                <Map
+                  mapId={import.meta.env.VITE_GOOGLE_MAP_ID || "DEMO_MAP_ID"}
+                  defaultZoom={11}
+                  defaultCenter={mapCenter}
+                  center={mapCenter}
+                  zoom={mapZoom}
+                  onCenterChanged={ev => setMapCenter(ev.detail.center)}
+                  onZoomChanged={ev => setMapZoom(ev.detail.zoom)}
+                  disableDefaultUI={true}
+                  className="w-full h-full"
+                >
+                  {complaints.map((c) => c.location?.lat && (
+                    <AdvancedMarker 
+                      key={c._id} 
+                      position={{ lat: c.location.lat, lng: c.location.lng }}
+                      onClick={() => handleMarkerClick(c)}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-lg cursor-pointer transform hover:scale-110 transition-transform ${
+                        c.severity === 'Critical' ? 'bg-destructive' : 
+                        c.status === 'Resolved' ? 'bg-green-500' : 'bg-primary'
+                      }`}>
+                        {c.severity === 'Critical' ? <AlertTriangle size={14} className="text-white" /> : <MapIcon size={14} className="text-white" />}
+                      </div>
+                    </AdvancedMarker>
+                  ))}
+                </Map>
+              </APIProvider>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-secondary/20 flex-col text-muted-foreground">
+                <MapIcon size={48} className="mb-4 opacity-50" />
+                <p>Google Maps API Key not configured</p>
               </div>
-              <div className="overflow-x-auto">
-                 <table className="w-full text-left border-collapse">
-                    <thead>
-                       <tr className="bg-secondary/30 text-xs uppercase tracking-wider text-muted-foreground border-b border-border">
-                          <th className="px-6 py-4 font-bold">ID</th>
-                          <th className="px-6 py-4 font-bold">Issue</th>
-                          <th className="px-6 py-4 font-bold">Location</th>
-                          <th className="px-6 py-4 font-bold">Priority</th>
-                          <th className="px-6 py-4 font-bold">Status</th>
-                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border text-sm">
-                       {complaints.filter(c => !searchQuery || (c.complaintId && c.complaintId.toLowerCase().includes(searchQuery.toLowerCase())) || (c.location?.address && c.location.address.toLowerCase().includes(searchQuery.toLowerCase()))).slice(0, 5).map((c, i) => (
-                          <tr key={c._id || i} className="hover:bg-secondary/30 transition-colors cursor-pointer" onClick={() => setSelectedComplaint(c)}>
-                             <td className="px-6 py-4 font-medium text-muted-foreground">{c.complaintId || 'CM-XXXX'}</td>
-                             <td className="px-6 py-4 font-medium">{c.issueDetected || c.originalDescription || 'Complaint'}</td>
-                             <td className="px-6 py-4 text-muted-foreground truncate max-w-[150px]">{c.location?.address || 'Unknown'}</td>
-                             <td className="px-6 py-4">
-                                <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${c.severity === 'High' || c.severity === 'Critical' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-500'}`}>
-                                   {c.severity}
-                                </span>
-                             </td>
-                             <td className="px-6 py-4">{c.status}</td>
-                          </tr>
-                       ))}
-                       {complaints.length === 0 && (
-                          <tr>
-                             <td colSpan={5} className="px-6 py-8 text-center text-muted-foreground">No reports available in the database.</td>
-                          </tr>
-                       )}
-                    </tbody>
-                 </table>
-              </div>
-           </div>
+            )}
+          </div>
 
-           {/* 5. Notifications & AI */}
-           <div className="space-y-8">
-              <div className="bg-card/40 border border-border rounded-2xl p-6">
-                 <h3 className="font-bold flex items-center gap-2 mb-4"><Activity size={18} /> Notifications</h3>
-                 <div className="space-y-4">
-                    <div className="flex gap-3 text-sm">
-                       <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
-                       <p>Road Department approved task <span className="font-bold text-foreground">CM-1001</span></p>
+          {/* Recent List */}
+          <div className="bg-card border border-border rounded-3xl p-6 shadow-lg flex flex-col">
+            <h3 className="text-xl font-bold mb-6">{t('dashboard.recentReports')}</h3>
+            
+            {complaints.length === 0 ? (
+              <EmptyState 
+                icon={Activity} 
+                title={t('dashboard.noReports')}
+                description={user?.role === 'officer' ? t('dashboard.noReportsDescOfficer') : t('dashboard.noReportsDescCitizen')}
+                actionLabel={user?.role === 'citizen' ? t('empty.reportAnIssue') : undefined}
+                actionPath={user?.role === 'citizen' ? '/report' : undefined}
+              />
+            ) : (
+              <div className="space-y-4 overflow-y-auto pr-2 flex-1 max-h-[500px]">
+                {complaints.map(c => (
+                  <div 
+                    key={c._id} 
+                    onClick={() => navigate(`/issue/${c.complaintId}`)}
+                    className="p-4 rounded-xl border border-border hover:border-primary/50 bg-background cursor-pointer transition-colors"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className="font-bold text-sm truncate pr-4">{c.issueDetected || "Report"}</h4>
+                      <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded shrink-0 ${
+                        c.severity === 'Critical' ? 'bg-destructive/10 text-destructive' : 'bg-secondary text-muted-foreground'
+                      }`}>
+                        {c.severity}
+                      </span>
                     </div>
-                    <div className="flex gap-3 text-sm">
-                       <div className="w-2 h-2 rounded-full bg-green-500 mt-1.5 shrink-0" />
-                       <p>Garbage issue resolved at <span className="font-bold text-foreground">Malad West</span></p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
+                      <span className="truncate">{c.location?.address?.split(',')[0]}</span>
+                      <span>•</span>
+                      <span>{new Date(c.createdAt).toLocaleDateString()}</span>
                     </div>
-                    <div className="flex gap-3 text-sm">
-                       <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-                       <p>New complaint received: <span className="font-bold text-foreground">Water Leak</span></p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-primary">{c.suggestedDepartment || "General"}</span>
+                      <ChevronRight size={14} className="text-muted-foreground" />
                     </div>
-                 </div>
+                  </div>
+                ))}
               </div>
-
-              <div className="bg-primary/5 border border-primary/20 rounded-2xl p-6">
-                 <h3 className="font-bold flex items-center gap-2 mb-4 text-primary"><Bot size={18} /> AI Assistant</h3>
-                 <p className="text-sm text-muted-foreground mb-4">Quick actions to manage your workflow.</p>
-                 <div className="space-y-2">
-                    <button onClick={() => handleAIQuery("What needs attention?")} className="w-full text-left px-4 py-3 bg-background border border-border rounded-xl text-sm font-medium hover:bg-secondary flex justify-between items-center group">
-                       What needs attention? <ChevronRight size={16} className="text-muted-foreground group-hover:text-foreground" />
-                    </button>
-                    <button onClick={() => handleAIQuery("Generate today's report")} className="w-full text-left px-4 py-3 bg-background border border-border rounded-xl text-sm font-medium hover:bg-secondary flex justify-between items-center group">
-                       Generate today's report <ChevronRight size={16} className="text-muted-foreground group-hover:text-foreground" />
-                    </button>
-                 </div>
-              </div>
-           </div>
-
+            )}
+          </div>
         </div>
-
       </div>
+
+      <ComplaintDrawer 
+        isOpen={isDrawerOpen} 
+        onClose={() => setIsDrawerOpen(false)} 
+        complaint={selectedComplaint} 
+      />
     </div>
   );
 };

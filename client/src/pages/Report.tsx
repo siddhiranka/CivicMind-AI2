@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, ChevronRight, CheckCircle2, AlertTriangle, Activity, MapPin, Search, Server, FileText, Check, ShieldCheck } from 'lucide-react';
+import { Upload, ChevronRight, AlertTriangle, Activity, MapPin, Search, Check, FileText, BrainCircuit, ScanSearch, Gavel, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
+import VoiceInput from '../components/VoiceInput';
+import { useAuth } from '../context/AuthContext';
 
 const Report = () => {
   const [step, setStep] = useState(1);
@@ -17,10 +21,16 @@ const Report = () => {
   const [complaintId, setComplaintId] = useState<string>('');
 
   const navigate = useNavigate();
+  const { i18n } = useTranslation();
+  const { user } = useAuth();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selected = e.target.files[0];
+      if (selected.size > 10 * 1024 * 1024) {
+        toast.error('File too large', { description: 'Please select an image under 10MB.' });
+        return;
+      }
       setFile(selected);
       setPreview(URL.createObjectURL(selected));
     }
@@ -52,14 +62,14 @@ const Report = () => {
   }
 
   const handleAnalyze = async () => {
-    if (!file || !description) return;
+    if (!file || !description || !locationStr) return;
     
     setIsAnalyzing(true);
     setAiStep(0);
     
     const steps = setInterval(() => {
-       setAiStep(prev => prev < 5 ? prev + 1 : prev);
-    }, 1200);
+       setAiStep(prev => prev < 3 ? prev + 1 : prev);
+    }, 1500);
     
     const loc = await requestLocation();
     
@@ -68,6 +78,7 @@ const Report = () => {
     formData.append('locationStr', locationStr);
     formData.append('image', file);
     formData.append('hasGps', loc.hasGps ? 'true' : 'false');
+    formData.append('language', i18n.language);
     if (loc.hasGps) {
       formData.append('lat', loc.lat.toString());
       formData.append('lng', loc.lng.toString());
@@ -76,58 +87,68 @@ const Report = () => {
     try {
       const response = await fetch('/api/complaints', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${user?.token || JSON.parse(localStorage.getItem('civicmind_user') || '{}').token}`
+        },
         body: formData
       });
       
       const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to process complaint');
+      }
+
       setAiResult(data.aiAnalysis);
       if (data.complaint) {
          setComplaintId(data.complaint.complaintId);
       }
       
       clearInterval(steps);
-      setAiStep(6);
+      setAiStep(4);
       
       setTimeout(() => {
-        setStep(3); // Move to results step
+        setStep(4); // Move to results step
         setIsAnalyzing(false);
+        toast.success('Analysis Complete', { description: 'The AI has finished reviewing your report.' });
       }, 1000);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Failed to analyze issue.');
+      toast.error('AI Processing Failed', { description: err.message || 'An error occurred.' });
       clearInterval(steps);
       setIsAnalyzing(false);
     }
   };
 
-  const thinkingSteps = [
-    "Analyzing Image...",
-    "Detecting Scene Context...",
-    "Comparing Description...",
-    "Checking GPS Verification...",
-    "Generating Decision...",
-    "Preparing Recommendation..."
+  const agentSteps = [
+    { icon: <ScanSearch size={20} />, text: "Vision Agent: Detecting objects in scene..." },
+    { icon: <BrainCircuit size={20} />, text: "Analytics Agent: Cross-referencing description..." },
+    { icon: <Gavel size={20} />, text: "Decision Agent: Prioritizing and routing..." },
+    { icon: <Sparkles size={20} />, text: "Gemini: Compiling final recommendation..." }
   ];
 
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden flex items-center justify-center pt-24 pb-10">
-      
-      {/* Background Glows */}
-      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
-
-      <div className="max-w-4xl w-full mx-auto px-4 relative z-10">
-        <div className="mb-10 text-center">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-primary via-blue-400 to-indigo-400 bg-clip-text text-transparent">
-            AI Incident Reporting
-          </h1>
-          <p className="text-muted-foreground mt-2">CivicMind AI verifies and routes your report instantly.</p>
+    <div className="min-h-[88vh] bg-background relative overflow-hidden flex flex-col items-center justify-start pt-6 md:pt-12 pb-10">
+      <div className="max-w-3xl w-full mx-auto px-4 md:px-6 relative z-10">
+        
+        {/* Progress Indicator */}
+        <div className="flex items-center justify-between mb-12 relative">
+          <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-border -z-10" />
+          {[1, 2, 3].map((num) => (
+            <div 
+              key={num}
+              className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm transition-colors duration-500
+                ${step >= num ? 'bg-primary text-primary-foreground shadow-[0_0_15px_rgba(37,99,235,0.5)]' : 'bg-card text-muted-foreground border border-border'}`}
+            >
+              {step > num ? <Check size={18} /> : num}
+            </div>
+          ))}
         </div>
 
-        <div className="bg-card/40 backdrop-blur-2xl border border-white/5 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+        <div className="bg-card border border-border rounded-3xl p-8 md:p-12 shadow-xl relative overflow-hidden">
           <AnimatePresence mode="wait">
             
-            {/* STEP 1: Description */}
+            {/* STEP 1: What happened? */}
             {step === 1 && (
               <motion.div
                 key="step1"
@@ -136,32 +157,36 @@ const Report = () => {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-6"
               >
-                <h2 className="text-2xl font-bold">What is the issue?</h2>
+                <div className="mb-8">
+                  <h2 className="text-3xl font-bold mb-2">What happened?</h2>
+                  <p className="text-muted-foreground">Describe the issue in your own words. Gemini will automatically extract the key details.</p>
+                </div>
+                
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-semibold uppercase tracking-wider text-muted-foreground">Description</label>
+                  <VoiceInput onResult={(text) => setDescription(prev => prev ? `${prev} ${text}` : text)} />
+                </div>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="e.g. There is a huge pothole causing traffic..."
-                  className="w-full h-32 bg-background/50 border border-border/50 rounded-2xl p-4 text-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none shadow-inner"
+                  placeholder="e.g. There is a huge pothole causing traffic, it looks quite dangerous for bikes..."
+                  className="w-full h-40 bg-secondary/30 border border-border rounded-2xl p-5 text-lg text-foreground focus:ring-2 focus:ring-primary focus:bg-background transition-colors resize-none placeholder:text-muted-foreground/50"
+                  autoFocus
                 />
-                <h2 className="text-xl font-bold mt-4">Where is it located?</h2>
-                <input 
-                  type="text"
-                  value={locationStr}
-                  onChange={(e) => setLocationStr(e.target.value)}
-                  placeholder="e.g. 123 Main Street, Andheri East"
-                  className="w-full bg-background/50 border border-border/50 rounded-xl p-4 text-foreground focus:outline-none focus:ring-2 focus:ring-primary shadow-inner"
-                />
-                <button
-                  disabled={!description.trim() || !locationStr.trim()}
-                  onClick={() => setStep(2)}
-                  className="px-8 py-4 bg-primary text-primary-foreground rounded-xl font-bold ml-auto flex items-center gap-2 hover:bg-primary/90 disabled:opacity-50 transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:-translate-y-1"
-                >
-                  Next Step <ChevronRight size={18} />
-                </button>
+                
+                <div className="flex justify-end pt-4">
+                  <button
+                    disabled={!description.trim()}
+                    onClick={() => setStep(2)}
+                    className="px-8 py-4 bg-primary text-primary-foreground rounded-xl font-bold flex items-center gap-2 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100 transition-all shadow-lg"
+                  >
+                    Next <ChevronRight size={20} />
+                  </button>
+                </div>
               </motion.div>
             )}
 
-            {/* STEP 2: Image Upload & Scanning */}
+            {/* STEP 2: Where did it happen? */}
             {step === 2 && (
               <motion.div
                 key="step2"
@@ -170,9 +195,51 @@ const Report = () => {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-6"
               >
-                <h2 className="text-2xl font-bold">Upload Visual Evidence</h2>
+                <div className="mb-8">
+                  <h2 className="text-3xl font-bold mb-2">Where is it located?</h2>
+                  <p className="text-muted-foreground">Provide the nearest landmark or street address.</p>
+                </div>
                 
-                <div className="relative border-2 border-dashed border-border rounded-2xl h-72 flex flex-col items-center justify-center overflow-hidden hover:border-primary/50 transition-colors bg-background/30 cursor-pointer">
+                <div className="relative">
+                  <MapPin className="absolute left-5 top-1/2 -translate-y-1/2 text-muted-foreground" size={24} />
+                  <input 
+                    type="text"
+                    value={locationStr}
+                    onChange={(e) => setLocationStr(e.target.value)}
+                    placeholder="e.g. 123 Main Street, Andheri East"
+                    className="w-full bg-secondary/30 border border-border rounded-2xl py-5 pl-14 pr-5 text-lg text-foreground focus:ring-2 focus:ring-primary focus:bg-background transition-colors placeholder:text-muted-foreground/50"
+                    autoFocus
+                  />
+                </div>
+                
+                <div className="flex justify-between items-center pt-8">
+                  <button onClick={() => setStep(1)} className="text-muted-foreground hover:text-foreground font-medium px-4 py-2">Back</button>
+                  <button
+                    disabled={!locationStr.trim()}
+                    onClick={() => setStep(3)}
+                    className="px-8 py-4 bg-primary text-primary-foreground rounded-xl font-bold flex items-center gap-2 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100 transition-all shadow-lg"
+                  >
+                    Next <ChevronRight size={20} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* STEP 3: Image Upload & Scanning */}
+            {step === 3 && (
+              <motion.div
+                key="step3"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-6"
+              >
+                <div className="mb-8">
+                  <h2 className="text-3xl font-bold mb-2">Upload Evidence</h2>
+                  <p className="text-muted-foreground">Snap a photo or upload an image. The AI needs this to verify the claim.</p>
+                </div>
+                
+                <div className="relative border-2 border-dashed border-border rounded-2xl h-80 flex flex-col items-center justify-center overflow-hidden hover:border-primary/50 transition-colors bg-secondary/20 cursor-pointer group">
                   <input
                     type="file"
                     accept="image/*"
@@ -183,161 +250,160 @@ const Report = () => {
                   
                   {preview ? (
                     <>
-                      <img src={preview} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-60" />
+                      <img src={preview} alt="Preview" className="absolute inset-0 w-full h-full object-cover" />
                       {isAnalyzing && (
-                        <div className="absolute inset-0 z-30 overflow-hidden rounded-2xl">
-                          {/* Laser Scanner */}
-                          <motion.div 
-                             initial={{ top: '-20%' }}
-                             animate={{ top: '120%' }}
-                             transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                             className="absolute left-0 w-full h-1/4 bg-gradient-to-b from-transparent via-primary/20 to-primary/80 border-b-2 border-primary shadow-[0_10px_30px_rgba(59,130,246,1)]"
-                          />
-                          {/* AI Thinking Panel Overlay */}
-                          <div className="absolute inset-0 bg-background/60 backdrop-blur-md flex flex-col items-center justify-center p-6">
-                            <Activity size={40} className="text-primary animate-pulse mb-6" />
-                            <div className="w-full max-w-sm space-y-3">
-                              {thinkingSteps.map((text, idx) => (
-                                <div key={idx} className={`flex items-center gap-3 text-sm font-medium ${aiStep >= idx ? 'text-foreground' : 'text-muted-foreground opacity-30'}`}>
-                                  {aiStep > idx ? <Check size={16} className="text-primary" /> : aiStep === idx ? <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" /> : <div className="w-4 h-4 rounded-full border border-muted-foreground" />}
-                                  {text}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
+                         <div className="absolute inset-0 z-30 bg-background/80 backdrop-blur-sm flex flex-col justify-center p-8">
+                           <div className="space-y-6 max-w-md mx-auto w-full">
+                             {agentSteps.map((agent, idx) => (
+                               <motion.div 
+                                 key={idx}
+                                 initial={{ opacity: 0, x: -10 }}
+                                 animate={{ opacity: aiStep >= idx ? 1 : 0.3, x: aiStep >= idx ? 0 : -10 }}
+                                 className={`flex items-center gap-4 ${aiStep === idx ? 'text-primary font-medium' : 'text-foreground'}`}
+                               >
+                                 <div className={`p-2 rounded-lg ${aiStep === idx ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'}`}>
+                                   {agent.icon}
+                                 </div>
+                                 <div className="flex-1">
+                                   <div className="text-sm">{agent.text}</div>
+                                 </div>
+                                 {aiStep > idx && <Check size={16} className="text-primary" />}
+                                 {aiStep === idx && <Activity size={16} className="text-primary animate-spin" />}
+                               </motion.div>
+                             ))}
+                           </div>
+                         </div>
                       )}
                     </>
                   ) : (
-                    <div className="flex flex-col items-center text-muted-foreground">
-                      <Upload size={48} className="mb-4 text-primary" />
-                      <p className="font-medium">Click or drag an image here</p>
-                      <p className="text-xs mt-2 opacity-70">JPEG, PNG up to 10MB</p>
+                    <div className="flex flex-col items-center text-muted-foreground group-hover:text-primary transition-colors">
+                      <Upload size={48} className="mb-4" />
+                      <p className="font-semibold text-lg">Click or drag an image here</p>
+                      <p className="text-sm mt-2 opacity-70">JPEG, PNG up to 10MB</p>
                     </div>
                   )}
                 </div>
 
-                <div className="flex justify-between items-center">
-                  <button onClick={() => setStep(1)} className="text-muted-foreground hover:text-foreground font-medium" disabled={isAnalyzing}>Back</button>
+                <div className="flex justify-between items-center pt-8">
+                  <button onClick={() => setStep(2)} className="text-muted-foreground hover:text-foreground font-medium px-4 py-2" disabled={isAnalyzing}>Back</button>
                   <button
                     onClick={handleAnalyze}
                     disabled={!file || isAnalyzing}
-                    className="px-8 py-4 bg-primary text-primary-foreground rounded-xl font-bold flex items-center gap-2 hover:bg-primary/90 disabled:opacity-50 transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]"
+                    className="px-8 py-4 bg-primary text-primary-foreground rounded-xl font-bold flex items-center gap-2 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100 transition-all shadow-lg"
                   >
                     {isAnalyzing ? (
-                      <>Verifying... <Activity size={18} className="animate-spin" /></>
-                    ) : checkingGps ? (
-                      <>Requesting GPS... <MapPin size={18} className="animate-bounce" /></>
+                      <>Processing...</>
                     ) : (
-                      <>Run AI Evidence Assessment <Search size={18} /></>
+                      <>Run Analysis <Search size={20} /></>
                     )}
                   </button>
                 </div>
               </motion.div>
             )}
 
-            {/* STEP 3: AI Results */}
-            {step === 3 && aiResult && (
+            {/* STEP 4: AI Results (Responsible AI View) */}
+            {step === 4 && aiResult && (
               <motion.div
-                key="step3"
+                key="step4"
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 className="space-y-8"
               >
                 {!aiResult.isGenuine ? (
-                  <>
-                    <div className="flex items-center gap-3 text-destructive mb-2">
-                      <AlertTriangle size={32} />
-                      <h2 className="text-3xl font-bold text-foreground">Submission Flagged</h2>
+                  <div className="text-center py-8">
+                    <div className="w-20 h-20 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <AlertTriangle size={40} />
                     </div>
-                    <div className="p-8 bg-destructive/10 border border-destructive/30 rounded-2xl shadow-[0_0_30px_rgba(239,68,68,0.15)]">
-                      <h3 className="font-bold text-destructive text-xl mb-4">Authenticity Warning</h3>
-                      <p className="text-foreground text-lg mb-6 leading-relaxed">Our AI detected that this image may be a stock photo, unrelated to the description, or otherwise non-genuine.</p>
-                      
-                      <div className="bg-background/80 p-4 rounded-xl border border-destructive/20 mb-6">
-                        <span className="text-sm text-destructive font-bold uppercase tracking-wider mb-2 block">AI Reasoning</span>
-                        <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                          {aiResult.evidenceAssessment?.reasoning?.map((r: string, i: number) => <li key={i}>{r}</li>)}
-                        </ul>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => setStep(1)}
-                      className="w-full mt-6 py-4 bg-secondary text-secondary-foreground rounded-xl font-bold hover:bg-secondary/80 transition-all border border-white/5"
-                    >
-                      Restart Assessment
-                    </button>
-                  </>
+                    <h2 className="text-3xl font-bold mb-4">Evidence Unclear</h2>
+                    <p className="text-muted-foreground text-lg mb-4 max-w-lg mx-auto">
+                      {aiResult.evidenceAssessment.limitations || aiResult.evidenceAssessment.reasoning[0] || "The AI could not clearly identify the issue from the provided image."}
+                    </p>
+                    <p className="text-sm font-semibold mb-8">Please try again with a clearer, well-lit photo of the issue.</p>
+                    <button onClick={() => { setStep(3); setFile(null); setPreview(null); }} className="px-8 py-4 bg-primary text-primary-foreground rounded-xl font-bold shadow-lg">Upload Clearer Image</button>
+                  </div>
                 ) : (
-                  <>
-                    {/* Timeline */}
-                    <div className="flex items-center justify-between px-2 mb-8 relative">
-                      <div className="absolute top-1/2 left-0 w-full h-0.5 bg-border -z-10" />
-                      <div className="absolute top-1/2 left-0 w-1/3 h-0.5 bg-primary -z-10 shadow-[0_0_10px_rgba(37,99,235,1)]" />
-                      
-                      <TimelineIcon icon={<FileText size={16}/>} label="Submitted" active />
-                      <TimelineIcon icon={<Server size={16}/>} label="AI Review" active />
-                      <TimelineIcon icon={<ShieldCheck size={16}/>} label="Verified" active />
-                      <TimelineIcon icon={<Activity size={16}/>} label="Human Review" />
-                      <TimelineIcon icon={<CheckCircle2 size={16}/>} label="Resolved" />
-                    </div>
-
-                    <div className="flex items-center justify-between mb-4">
-                       <h2 className="text-3xl font-bold">AI Evidence Assessment</h2>
-                       {complaintId && (
-                          <div className="bg-primary/20 text-primary px-4 py-2 rounded-lg font-bold border border-primary/30">
-                             ID: {complaintId}
-                          </div>
-                       )}
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {/* Left Col: Evidence */}
-                      <div className="space-y-4">
-                        <div className="p-6 rounded-2xl border border-white/10 bg-card/40 flex flex-col">
-                          <span className="text-sm text-muted-foreground mb-4 font-semibold uppercase tracking-wider">Verification Metrics</span>
-                          
-                          <MetricRow label="Scene matches description" value={`${aiResult.evidenceAssessment?.sceneMatch}%`} />
-                          <MetricRow label="GPS Available" value={aiResult.evidenceAssessment?.gpsAvailable ? "YES" : "NO"} highlight={!aiResult.evidenceAssessment?.gpsAvailable} />
-                          <MetricRow label="Location Verified" value={aiResult.evidenceAssessment?.locationVerified ? "YES" : "NO"} highlight={!aiResult.evidenceAssessment?.locationVerified} />
-                          <MetricRow label="Confidence" value={`${aiResult.evidenceAssessment?.confidence}%`} />
-                          
-                          <div className="mt-4 pt-4 border-t border-border flex justify-between items-center">
-                            <span className="font-bold">Overall Evidence Strength</span>
-                            <span className={`text-2xl font-black ${(aiResult.evidenceAssessment?.overallStrength || 0) > 70 ? 'text-green-400' : 'text-amber-400'}`}>
-                              {aiResult.evidenceAssessment?.overallStrength}%
-                            </span>
-                          </div>
-                        </div>
+                  <div>
+                    <div className="flex items-center gap-3 mb-8">
+                      <div className="w-12 h-12 bg-green-500/10 text-green-500 rounded-xl flex items-center justify-center">
+                        <Check size={28} />
                       </div>
+                      <div>
+                        <h2 className="text-2xl font-bold">Report Verified</h2>
+                        <p className="text-muted-foreground">AI has processed your submission.</p>
+                      </div>
+                    </div>
 
-                      {/* Right Col: AI Reasoning */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                      {/* Left: Assessment Details */}
                       <div className="space-y-4">
-                        <div className="p-6 rounded-2xl border border-white/10 bg-card/40 h-full">
-                          <span className="text-sm text-primary mb-4 font-bold uppercase tracking-wider block">Why did AI reach this conclusion?</span>
-                          <ul className="space-y-3">
-                            {aiResult.evidenceAssessment?.reasoning?.map((reason: string, idx: number) => (
-                              <li key={idx} className="flex items-start gap-2 text-sm text-foreground/90">
-                                <div className="mt-1 w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
-                                {reason}
-                              </li>
+                        <div className="p-4 bg-secondary/30 border border-border rounded-xl">
+                          <span className="text-sm text-muted-foreground uppercase tracking-wider font-semibold block mb-2">Scene Analysis</span>
+                          <p className="text-sm font-medium leading-relaxed">
+                            {aiResult.evidenceAssessment.sceneAnalysis}
+                          </p>
+                        </div>
+                        <div className="p-4 bg-secondary/30 border border-border rounded-xl">
+                          <span className="text-sm text-muted-foreground uppercase tracking-wider font-semibold block mb-2">Detected Objects</span>
+                          <div className="flex flex-wrap gap-2">
+                            {aiResult.evidenceAssessment.detectedObjects?.map((obj: string, i: number) => (
+                              <span key={i} className="px-2 py-1 bg-background rounded-md text-xs border border-border">{obj}</span>
                             ))}
-                          </ul>
-                          <div className="mt-6 pt-6 border-t border-border">
-                            <span className="text-sm text-primary mb-2 font-bold uppercase tracking-wider block">Recommendation</span>
-                            <p className="font-medium text-lg">{aiResult.recommendedAction || 'Send inspection team.'}</p>
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Responsible AI Limitations */}
+                      <div className="space-y-4">
+                        <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                          <div className="flex items-center gap-2 mb-2 text-amber-600 dark:text-amber-400">
+                            <AlertTriangle size={16} />
+                            <span className="text-sm uppercase tracking-wider font-semibold">AI Limitations</span>
+                          </div>
+                          <p className="text-sm leading-relaxed text-amber-700 dark:text-amber-300">
+                            {aiResult.evidenceAssessment.limitations}
+                          </p>
+                        </div>
+                        
+                        <div className="p-4 bg-secondary/30 border border-border rounded-xl">
+                           <span className="text-sm text-muted-foreground uppercase tracking-wider font-semibold block mb-2">Confidence & Reasoning</span>
+                           <div className="flex items-center gap-3 mb-3">
+                             <div className="h-2 flex-1 bg-background rounded-full overflow-hidden">
+                               <div className="h-full bg-primary" style={{ width: `${aiResult.evidenceAssessment.confidence}%` }} />
+                             </div>
+                             <span className="text-sm font-bold">{aiResult.evidenceAssessment.confidence}%</span>
+                           </div>
+                           <ul className="text-xs space-y-2 text-muted-foreground">
+                             {aiResult.evidenceAssessment.reasoning?.map((r: string, i: number) => (
+                               <li key={i} className="flex items-start gap-2">
+                                 <div className="w-1 h-1 bg-primary rounded-full mt-1.5 shrink-0" />
+                                 <span>{r}</span>
+                               </li>
+                             ))}
+                           </ul>
                         </div>
                       </div>
                     </div>
 
-                    <button 
-                      onClick={() => navigate('/dashboard')}
-                      className="w-full mt-6 py-5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl font-bold text-white shadow-[0_0_30px_rgba(79,70,229,0.4)] hover:shadow-[0_0_40px_rgba(79,70,229,0.6)] hover:-translate-y-1 transition-all"
-                    >
-                      Proceed to AI Mission Control
-                    </button>
-                  </>
+                    <div className="p-5 border border-primary/20 bg-primary/5 rounded-xl flex items-center justify-between mb-8">
+                      <div>
+                        <span className="text-sm text-muted-foreground block mb-1">Assigned Department</span>
+                        <span className="font-bold text-lg text-primary">{aiResult.suggestedDepartment}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm text-muted-foreground block mb-1">Priority</span>
+                        <span className="font-bold text-lg text-foreground">{aiResult.estimatedPriority}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4">
+                      <button 
+                        onClick={() => navigate('/issue')}
+                        className="flex-1 py-4 bg-primary text-primary-foreground rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-all shadow-lg shadow-primary/25"
+                      >
+                        Track Complaint Status
+                      </button>
+                    </div>
+                  </div>
                 )}
               </motion.div>
             )}
@@ -348,21 +414,5 @@ const Report = () => {
     </div>
   );
 };
-
-const TimelineIcon = ({ icon, label, active = false }: { icon: React.ReactNode, label: string, active?: boolean }) => (
-  <div className="flex flex-col items-center gap-2">
-    <div className={`w-10 h-10 rounded-full flex items-center justify-center z-10 ${active ? 'bg-primary text-white shadow-[0_0_15px_rgba(37,99,235,0.6)]' : 'bg-secondary text-muted-foreground border border-border'}`}>
-      {icon}
-    </div>
-    <span className={`text-[10px] uppercase tracking-wider font-bold ${active ? 'text-primary' : 'text-muted-foreground'}`}>{label}</span>
-  </div>
-);
-
-const MetricRow = ({ label, value, highlight = false }: { label: string, value: string, highlight?: boolean }) => (
-  <div className="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
-    <span className="text-sm text-muted-foreground">{label}</span>
-    <span className={`font-bold ${highlight ? 'text-amber-400' : 'text-foreground'}`}>{value}</span>
-  </div>
-);
 
 export default Report;
