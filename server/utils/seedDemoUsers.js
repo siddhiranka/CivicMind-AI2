@@ -1,8 +1,10 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
 
 const seedDemoUsers = async () => {
     try {
+        if (mongoose.connection.readyState !== 1) return;
         // Check if demo citizen exists
         const citizenExists = await User.findOne({ email: 'citizen@demo.com' });
         if (!citizenExists) {

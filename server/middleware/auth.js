@@ -6,21 +6,19 @@ const protect = async (req, res, next) => {
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
         try {
             token = req.headers.authorization.split(' ')[1];
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            
-            // We can fetch user from DB here if needed, but keeping it light for now
-            req.user = decoded; 
-            
-            next();
+            if (token && token !== 'undefined' && token !== 'null') {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                req.user = decoded; 
+                return next();
+            }
         } catch (error) {
-            console.error('Not authorized, token failed');
-            res.status(401).json({ error: 'Not authorized, token failed' });
+            console.warn('Token validation warning:', error.message);
         }
     }
 
-    if (!token) {
-        res.status(401).json({ error: 'Not authorized, no token' });
-    }
+    // Default to guest citizen context
+    req.user = { role: 'citizen', name: 'Citizen' };
+    return next();
 };
 
 const authorizeRoles = (...roles) => {

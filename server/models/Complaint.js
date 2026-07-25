@@ -35,14 +35,15 @@ const complaintSchema = new mongoose.Schema({
     resourceAllocation: { type: String },
     assignedOfficerName: { type: String },
     expectedCompletionDate: { type: Date },
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' } // To be implemented with auth
+    user: { type: mongoose.Schema.Types.Mixed, ref: 'User' }
 }, { timestamps: true });
 
-complaintSchema.pre('save', function() {
+complaintSchema.pre('save', function(next) {
     if (!this.complaintId) {
         // Generate a random ID like CM-1024
         this.complaintId = 'CM-' + Math.floor(1000 + Math.random() * 9000);
     }
+    next();
 });
 
 module.exports = mongoose.model('Complaint', complaintSchema);

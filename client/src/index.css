@@ -80,3 +80,9 @@
     @apply ring-2 ring-primary ring-offset-2 ring-offset-background;
   }
 }
+
+@layer utilities {
+  /* Hide scrollbar but keep scrolling */
+  .hide-scrollbar::-webkit-scrollbar { display: none; }
+  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}

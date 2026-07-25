@@ -6,11 +6,12 @@ const storage = multer.memoryStorage();
 
 const upload = multer({ 
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit to support videos
     fileFilter: (req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase();
-        if (ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg' && ext !== '.webp') {
-            return cb(new Error('Only images are allowed'));
+        const allowedExts = ['.png', '.jpg', '.jpeg', '.webp', '.mp4', '.mov', '.webm'];
+        if (!allowedExts.includes(ext) && !file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/')) {
+            return cb(new Error('Only images (JPG, JPEG, PNG, WEBP) and videos (MP4, MOV, WEBM) are allowed'));
         }
         cb(null, true);
     }

@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, X, Send, Bot, User, Trash2, Sparkles } from 'lucide-react';
+import { MessageSquare, X, Send, Bot, User, Trash2, Sparkles, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import VoiceInput from './VoiceInput';
 
 interface ChatBotProps {
@@ -23,6 +24,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
   const [messages, setMessages] = useState<Message[]>(defaultMessages);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -51,6 +53,13 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
     setMessages(defaultMessages);
   };
 
+  const handleCopy = (text: string, index: number) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIndex(index);
+    toast.success('Copied answer to clipboard!');
+    setTimeout(() => setCopiedIndex(null), 2000);
+  };
+
   const handleSend = async (overrideMsg?: string) => {
     const msgToSend = overrideMsg || input;
     if (!msgToSend.trim()) return;
@@ -65,11 +74,25 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msgToSend.trim(), language: i18n.language })
       });
-      const data = await res.json();
+      const resText = await res.text();
+      let data: any = {};
+      try {
+        data = resText ? JSON.parse(resText) : {};
+      } catch (e) {
+        throw new Error(`AI service returned status ${res.status}`);
+      }
       
-      setMessages(prev => [...prev, { role: 'ai', content: data.reply }]);
-    } catch (error) {
-      setMessages(prev => [...prev, { role: 'ai', content: "Sorry, I'm having trouble connecting to the network right now." }]);
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Server error ${res.status}`);
+      }
+      
+      setMessages(prev => [...prev, { role: 'ai', content: data.reply || '*(No response from AI)*' }]);
+    } catch (error: any) {
+      const isApiKeyError = error.message?.includes('API') || error.message?.includes('key') || error.message?.includes('401') || error.message?.includes('403');
+      const errMsg = isApiKeyError
+        ? '⚠️ **AI service unavailable.** The Gemini API key may need to be updated in the server `.env` file.\n\nPlease check `GEMINI_API_KEY` and restart the server.'
+        : `⚠️ **Connection failed.** ${error.message || 'Unable to reach AI service. Please check that the backend server is running.'}`;
+      setMessages(prev => [...prev, { role: 'ai', content: errMsg }]);
     } finally {
       setIsTyping(false);
       setTimeout(() => inputRef.current?.focus(), 100);
@@ -108,11 +131,20 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.map((msg, i) => (
               <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                <div className={`max-w-[90%] p-4 rounded-3xl ${msg.role === 'user' ? 'bg-gradient-to-br from-blue-600 to-blue-500 text-white rounded-br-sm shadow-md' : 'bg-secondary/60 backdrop-blur-md text-foreground rounded-bl-sm shadow-sm border border-white/5'}`}>
+                <div className={`max-w-[90%] p-4 rounded-3xl relative group ${msg.role === 'user' ? 'bg-gradient-to-br from-blue-600 to-blue-500 text-white rounded-br-sm shadow-md' : 'bg-secondary/60 backdrop-blur-md text-foreground rounded-bl-sm shadow-sm border border-white/5'}`}>
                   {msg.role === 'ai' ? (
-                     <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-background/50 prose-strong:text-primary">
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
-                     </div>
+                    <>
+                      <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-background/50 prose-strong:text-primary pr-6">
+                         <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      </div>
+                      <button
+                        onClick={() => handleCopy(msg.content, i)}
+                        className="absolute top-3 right-3 p-1.5 rounded-lg bg-background/60 hover:bg-background text-muted-foreground hover:text-primary transition-all opacity-80 hover:opacity-100 border border-border/40"
+                        title="Copy answer"
+                      >
+                        {copiedIndex === i ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                      </button>
+                    </>
                   ) : (
                      <p>{msg.content}</p>
                   )}

@@ -38,16 +38,19 @@ const ComplaintDrawer: React.FC<ComplaintDrawerProps> = ({ isOpen, onClose, comp
             className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50"
           />
 
-          {/* Drawer */}
+          {/* Drawer / Mobile Bottom Sheet */}
           <motion.div 
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
+            initial={{ y: '100%', x: 0 }}
+            animate={{ y: 0, x: 0 }}
+            exit={{ y: '100%', x: 0 }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed top-0 right-0 h-full w-full max-w-xl bg-card border-l border-border z-50 overflow-y-auto shadow-2xl flex flex-col"
+            className="fixed bottom-0 right-0 h-[88vh] md:h-full w-full max-w-xl bg-card border-t md:border-t-0 md:border-l border-border z-50 overflow-y-auto shadow-2xl flex flex-col rounded-t-3xl md:rounded-t-none md:rounded-l-3xl"
           >
+            {/* Mobile Drag Handle */}
+            <div className="w-12 h-1.5 bg-muted-foreground/30 rounded-full mx-auto mt-3 mb-1 block md:hidden shrink-0" />
+
             {/* Header */}
-            <div className="sticky top-0 bg-card/80 backdrop-blur-md border-b border-border p-6 flex justify-between items-center z-10">
+            <div className="sticky top-0 bg-card/90 backdrop-blur-md border-b border-border p-5 sm:p-6 flex justify-between items-center z-10 shrink-0">
               <div>
                 <h2 className="text-xl font-bold">{complaint.complaintId}</h2>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">

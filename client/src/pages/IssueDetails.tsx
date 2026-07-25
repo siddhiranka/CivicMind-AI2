@@ -33,12 +33,15 @@ const IssueDetails = () => {
     setError('');
     
     try {
-      await new Promise(r => setTimeout(r, 800));
+      const headers: Record<string, string> = {
+        'x-language': i18n.language
+      };
+      if (user?.token) {
+        headers['Authorization'] = `Bearer ${user.token}`;
+      }
+
       const response = await fetch(`/api/complaints/track/${searchId}`, {
-        headers: {
-          'Authorization': `Bearer ${user?.token || JSON.parse(localStorage.getItem('civicmind_user') || '{}').token}`,
-          'x-language': i18n.language
-        }
+        headers
       });
       if (!response.ok) {
         throw new Error('Complaint not found');
@@ -141,31 +144,31 @@ const IssueDetails = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background pt-24 pb-12 flex flex-col items-center">
-      <div className="max-w-6xl w-full px-6">
+    <div className="min-h-screen bg-background pt-20 sm:pt-24 pb-12 flex flex-col items-center">
+      <div className="max-w-6xl w-full px-4 sm:px-6 md:px-8">
         
         {!id && (
           <>
-            <div className="text-center mb-10 max-w-3xl mx-auto">
-              <h1 className="text-4xl font-bold mb-4">{t('issue.searchTitle', 'Track Your Complaint')}</h1>
-              <p className="text-muted-foreground text-lg">{t('issue.searchSubtitle', 'Enter your Complaint ID for complete transparency on your issue\'s status.')}</p>
+            <div className="text-center mb-8 sm:mb-10 max-w-3xl mx-auto">
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-3 sm:mb-4">{t('issue.searchTitle', 'Track Your Complaint')}</h1>
+              <p className="text-muted-foreground text-base sm:text-lg">{t('issue.searchSubtitle', 'Enter your Complaint ID for complete transparency on your issue\'s status.')}</p>
             </div>
-            <form onSubmit={handleSearch} className="relative mb-12 max-w-3xl mx-auto">
+            <form onSubmit={handleSearch} className="relative mb-8 sm:mb-12 max-w-3xl mx-auto">
               <div className="relative">
-                <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-muted-foreground" size={24} />
+                <Search className="absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 text-muted-foreground" size={22} />
                 <input 
                   type="text"
                   value={complaintId}
                   onChange={(e) => setComplaintId(e.target.value.toUpperCase())}
                   placeholder={t('issue.searchPlaceholder', 'e.g. CM-1234')}
-                  className="w-full bg-card border border-border rounded-full py-5 pl-16 pr-44 text-lg focus:ring-2 focus:ring-primary shadow-lg uppercase"
+                  className="w-full bg-card border border-border rounded-2xl sm:rounded-full min-h-[48px] py-4 sm:py-5 pl-12 sm:pl-16 pr-28 sm:pr-44 text-base sm:text-lg focus:ring-2 focus:ring-primary shadow-lg uppercase"
                 />
                 <div className="absolute right-2 top-2 bottom-2 flex items-center gap-2">
                   <VoiceInput onResult={(text) => setComplaintId(text.toUpperCase())} />
                   <button 
                     type="submit"
                     disabled={isSearching || !complaintId.trim()}
-                    className="px-8 h-full bg-primary text-primary-foreground rounded-full font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center gap-2"
+                    className="px-5 sm:px-8 h-full min-h-[44px] bg-primary text-primary-foreground rounded-xl sm:rounded-full font-bold hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-2"
                   >
                     {isSearching ? <Loader2 className="animate-spin" size={20} /> : t('issue.search', 'Search')}
                   </button>
@@ -188,7 +191,7 @@ const IssueDetails = () => {
             </motion.div>
           )}
 
-          {complaint && (
+          {complaint && !error && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -196,35 +199,37 @@ const IssueDetails = () => {
               className="w-full"
             >
               {/* Header */}
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-4">
+              <div className="flex items-start sm:items-center justify-between mb-6 sm:mb-8">
+                <div className="flex items-start sm:items-center gap-3 sm:gap-4">
                   <button 
-                    onClick={() => navigate(user?.role === 'officer' ? '/dashboard' : '/')}
-                    className="p-3 bg-secondary hover:bg-secondary/80 rounded-xl transition-colors"
+                    onClick={() => navigate(-1)}
+                    className="p-3 min-w-[44px] min-h-[44px] bg-secondary hover:bg-secondary/80 active:scale-95 rounded-xl transition-all flex items-center justify-center shrink-0"
                   >
                     <ArrowLeft size={20} />
                   </button>
                   <div>
-                    <h1 className="text-3xl font-bold">{user?.role === 'officer' ? t('issue.officerDecision', 'Officer Review Workspace') : t('issue.yourComplaint', 'Issue Details')}</h1>
-                    <p className="text-muted-foreground flex items-center gap-2 mt-1">
-                      {t('report.complaintId', 'Complaint ID')}: <span className="font-semibold text-foreground">{complaint.complaintId}</span>
-                      <span className="text-xs px-2 py-0.5 bg-secondary rounded uppercase font-bold tracking-wider">{String(t(`status.${complaint.status}`, complaint.status))}</span>
-                    </p>
+                    <h1 className="text-xl sm:text-2xl md:text-3xl font-bold leading-tight">{user?.role === 'officer' ? t('issue.officerDecision', 'Officer Review Workspace') : t('issue.yourComplaint', 'Issue Details')}</h1>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <p className="text-muted-foreground text-sm sm:text-base">
+                        {t('report.complaintId', 'Complaint ID')}: <span className="font-semibold text-foreground">{complaint.complaintId}</span>
+                      </p>
+                      <span className="text-xs px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg uppercase font-bold tracking-wider">{String(t(`status.${complaint.status}`, complaint.status))}</span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6 md:gap-8">
                 
                 {/* Left Column: Evidence & Citizen Report */}
-                <div className="space-y-8">
-                  <div className="bg-card border border-border rounded-3xl overflow-hidden shadow-lg">
-                    <div className="p-6 border-b border-border flex items-center gap-2 font-bold text-lg">
+                <div className="space-y-5 sm:space-y-6 md:space-y-8">
+                  <div className="bg-card border border-border rounded-2xl sm:rounded-3xl overflow-hidden shadow-lg">
+                    <div className="p-4 sm:p-6 border-b border-border flex items-center gap-2 font-bold text-base sm:text-lg">
                       <User className="text-primary" size={20} />
                       {t('report.step3', 'Citizen Evidence')}
                     </div>
-                    <img src={complaint.imageUrl} alt="Evidence" className="w-full h-64 object-cover" />
-                    <div className="p-6 space-y-6">
+                    <img src={complaint.imageUrl} alt="Evidence" className="w-full h-48 sm:h-64 object-cover rounded-b-none" />
+                    <div className="p-4 sm:p-6 space-y-5 sm:space-y-6">
                       <div>
                         <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">{t('report.location', 'Reported Location')}</span>
                         <div className="flex items-start gap-2">
@@ -246,9 +251,9 @@ const IssueDetails = () => {
                     </div>
                   </div>
 
-                  <div className="bg-card border border-border rounded-3xl p-8 shadow-lg">
-                    <h3 className="text-lg font-bold mb-6">{t('issue.timeline', 'Resolution Timeline')}</h3>
-                    <div className="relative pl-4 space-y-8">
+                  <div className="bg-card border border-border rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 shadow-lg">
+                    <h3 className="text-base sm:text-lg font-bold mb-4 sm:mb-6">{t('issue.timeline', 'Resolution Timeline')}</h3>
+                    <div className="relative pl-4 space-y-5 sm:space-y-8">
                       <div className="absolute top-2 bottom-2 left-[23px] w-0.5 bg-secondary -z-10" />
                       
                       {steps.map((step) => {
@@ -257,8 +262,8 @@ const IssueDetails = () => {
                         const isCurrent = completedSteps[completedSteps.length - 1] === step.id;
                         
                         return (
-                          <div key={step.id} className="flex items-start gap-4">
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 mt-0.5 transition-colors duration-500
+                          <div key={step.id} className="flex items-center gap-3 sm:gap-4 min-h-[44px]">
+                            <div className={`w-8 h-8 sm:w-6 sm:h-6 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors duration-500
                               ${isCurrent ? 'bg-primary border-primary text-primary-foreground shadow-[0_0_15px_rgba(37,99,235,0.5)]' : 
                                 isCompleted ? 'bg-primary border-primary text-primary-foreground' : 
                                 'bg-card border-border text-muted-foreground'}
@@ -282,33 +287,33 @@ const IssueDetails = () => {
                 </div>
 
                 {/* Middle/Right Column: AI Assessment */}
-                <div className="lg:col-span-2 space-y-8">
-                  <div className="bg-card border border-border rounded-3xl p-8 shadow-lg relative overflow-hidden">
+                <div className="lg:col-span-2 space-y-5 sm:space-y-6 md:space-y-8">
+                  <div className="bg-card border border-border rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 shadow-lg relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2 pointer-events-none" />
                     
-                    <div className="flex items-center justify-between mb-8 border-b border-border pb-6 relative z-10">
-                      <div className="flex items-center gap-3">
-                        <ShieldCheck size={28} className="text-primary" />
-                        <h2 className="text-2xl font-bold">AI Evidence Assessment</h2>
+                    <div className="flex items-center justify-between mb-5 sm:mb-8 border-b border-border pb-4 sm:pb-6 relative z-10">
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        <ShieldCheck size={24} className="text-primary sm:w-7 sm:h-7" />
+                        <h2 className="text-lg sm:text-xl md:text-2xl font-bold">AI Evidence Assessment</h2>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 relative z-10">
-                      <div className="p-4 bg-secondary/30 rounded-xl border border-border">
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">Scene Matches</span>
-                        <span className="text-xl font-bold">{complaint.evidence?.sceneMatch || 0}%</span>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-5 sm:mb-8 relative z-10">
+                      <div className="p-3 sm:p-4 bg-secondary/30 rounded-xl border border-border">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">Scene Matches</span>
+                        <span className="text-lg sm:text-xl font-bold">{complaint.evidence?.sceneMatch || 0}%</span>
                       </div>
-                      <div className="p-4 bg-secondary/30 rounded-xl border border-border">
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">Confidence</span>
-                        <span className="text-xl font-bold">{complaint.evidence?.overallStrength || 0}%</span>
+                      <div className="p-3 sm:p-4 bg-secondary/30 rounded-xl border border-border">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">Confidence</span>
+                        <span className="text-lg sm:text-xl font-bold">{complaint.evidence?.overallStrength || 0}%</span>
                       </div>
-                      <div className="p-4 bg-secondary/30 rounded-xl border border-border">
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">GPS Present</span>
-                        <span className="text-xl font-bold">{complaint.evidence?.gpsAvailable ? 'Yes' : 'No'}</span>
+                      <div className="p-3 sm:p-4 bg-secondary/30 rounded-xl border border-border">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">GPS Present</span>
+                        <span className="text-lg sm:text-xl font-bold">{complaint.evidence?.gpsAvailable ? 'Yes' : 'No'}</span>
                       </div>
-                      <div className="p-4 bg-secondary/30 rounded-xl border border-border">
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">Evid. Strength</span>
-                        <span className={`text-xl font-bold ${complaint.severity === 'Critical' ? 'text-destructive' : 'text-primary'}`}>{complaint.severity}</span>
+                      <div className="p-3 sm:p-4 bg-secondary/30 rounded-xl border border-border">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">Evid. Strength</span>
+                        <span className={`text-lg sm:text-xl font-bold ${complaint.severity === 'Critical' ? 'text-destructive' : 'text-primary'}`}>{complaint.severity}</span>
                       </div>
                     </div>
 
@@ -346,7 +351,7 @@ const IssueDetails = () => {
                       </div>
                       
                       {user?.role === 'officer' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                           <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl">
                             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Recommended Dept</h3>
                             <p className="font-bold text-primary">{complaint.suggestedDepartment || complaint.evidence?.suggestedDepartment}</p>
@@ -381,16 +386,16 @@ const IssueDetails = () => {
                   {user?.role === 'officer' && (
                     <>
                       {/* Assignment Panel */}
-                      <div className="bg-card border border-border rounded-3xl p-8 shadow-lg">
-                        <h2 className="text-2xl font-bold mb-6">Assignment Panel</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-card border border-border rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 shadow-lg">
+                        <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Assignment Panel</h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                           <div>
                             <label className="block text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wider">Department</label>
                             <input
                               type="text"
                               value={suggestedDepartment}
                               onChange={(e) => setSuggestedDepartment(e.target.value)}
-                              className="w-full bg-secondary/30 border border-border rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary focus:bg-background transition-colors"
+                              className="w-full bg-secondary/30 border border-border rounded-xl p-3 min-h-[44px] text-sm focus:ring-2 focus:ring-primary focus:bg-background transition-colors"
                             />
                           </div>
                           <div>
@@ -400,7 +405,7 @@ const IssueDetails = () => {
                               value={assignedOfficerName}
                               onChange={(e) => setAssignedOfficerName(e.target.value)}
                               placeholder="e.g. John Doe"
-                              className="w-full bg-secondary/30 border border-border rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary focus:bg-background transition-colors"
+                              className="w-full bg-secondary/30 border border-border rounded-xl p-3 min-h-[44px] text-sm focus:ring-2 focus:ring-primary focus:bg-background transition-colors"
                             />
                           </div>
                           <div>
@@ -409,7 +414,7 @@ const IssueDetails = () => {
                               type="date"
                               value={expectedCompletionDate}
                               onChange={(e) => setExpectedCompletionDate(e.target.value)}
-                              className="w-full bg-secondary/30 border border-border rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary focus:bg-background transition-colors"
+                              className="w-full bg-secondary/30 border border-border rounded-xl p-3 min-h-[44px] text-sm focus:ring-2 focus:ring-primary focus:bg-background transition-colors"
                             />
                           </div>
                           <div>
@@ -419,25 +424,25 @@ const IssueDetails = () => {
                               value={budgetEstimation}
                               onChange={(e) => setBudgetEstimation(e.target.value)}
                               placeholder="e.g. $5,000"
-                              className="w-full bg-secondary/30 border border-border rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary focus:bg-background transition-colors"
+                              className="w-full bg-secondary/30 border border-border rounded-xl p-3 min-h-[44px] text-sm focus:ring-2 focus:ring-primary focus:bg-background transition-colors"
                             />
                           </div>
-                          <div className="md:col-span-2">
+                          <div className="sm:col-span-2">
                             <label className="block text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wider">Resource Allocation</label>
                             <input
                               type="text"
                               value={resourceAllocation}
                               onChange={(e) => setResourceAllocation(e.target.value)}
                               placeholder="e.g. 1 Crane, 3 Workers"
-                              className="w-full bg-secondary/30 border border-border rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary focus:bg-background transition-colors"
+                              className="w-full bg-secondary/30 border border-border rounded-xl p-3 min-h-[44px] text-sm focus:ring-2 focus:ring-primary focus:bg-background transition-colors"
                             />
                           </div>
                         </div>
                       </div>
 
                       {/* Action Panel */}
-                      <div className="bg-card border border-border rounded-3xl p-8 shadow-lg">
-                        <h2 className="text-2xl font-bold mb-6">Officer Decision</h2>
+                      <div className="bg-card border border-border rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 shadow-lg">
+                        <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Officer Decision</h2>
                         
                         <div className="mb-6">
                           <div className="flex items-center justify-between mb-2">
@@ -452,11 +457,11 @@ const IssueDetails = () => {
                           />
                         </div>
 
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
                           <button 
                             disabled={isSubmitting}
                             onClick={() => handleAction('Assigned')}
-                            className="col-span-2 md:col-span-1 p-3 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-xl font-semibold text-sm transition-colors flex flex-col items-center justify-center gap-1 text-center"
+                            className="p-3 min-h-[48px] bg-primary/10 hover:bg-primary/20 active:scale-95 text-primary border border-primary/20 rounded-xl font-semibold text-sm transition-all flex flex-col items-center justify-center gap-1 text-center"
                           >
                             <ChevronRight size={20} />
                             Assign
@@ -464,7 +469,7 @@ const IssueDetails = () => {
                           <button 
                             disabled={isSubmitting}
                             onClick={() => handleAction('In Progress')}
-                            className="col-span-2 md:col-span-1 p-3 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 border border-blue-500/20 rounded-xl font-semibold text-sm transition-colors flex flex-col items-center justify-center gap-1 text-center"
+                            className="p-3 min-h-[48px] bg-blue-500/10 hover:bg-blue-500/20 active:scale-95 text-blue-600 border border-blue-500/20 rounded-xl font-semibold text-sm transition-all flex flex-col items-center justify-center gap-1 text-center"
                           >
                             <MapPin size={20} />
                             Escalate
@@ -472,7 +477,7 @@ const IssueDetails = () => {
                           <button 
                             disabled={isSubmitting}
                             onClick={() => handleAction('Resolved')}
-                            className="col-span-2 md:col-span-1 p-3 bg-green-500/10 hover:bg-green-500/20 text-green-600 border border-green-500/20 rounded-xl font-semibold text-sm transition-colors flex flex-col items-center justify-center gap-1 text-center"
+                            className="p-3 min-h-[48px] bg-green-500/10 hover:bg-green-500/20 active:scale-95 text-green-600 border border-green-500/20 rounded-xl font-semibold text-sm transition-all flex flex-col items-center justify-center gap-1 text-center"
                           >
                             <CheckCircle2 size={20} />
                             Resolve
@@ -480,7 +485,7 @@ const IssueDetails = () => {
                           <button 
                             disabled={isSubmitting}
                             onClick={() => handleAction('Needs More Evidence')}
-                            className="col-span-2 md:col-span-1 p-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 border border-amber-500/20 rounded-xl font-semibold text-sm transition-colors flex flex-col items-center justify-center gap-1 text-center"
+                            className="p-3 min-h-[48px] bg-amber-500/10 hover:bg-amber-500/20 active:scale-95 text-amber-600 border border-amber-500/20 rounded-xl font-semibold text-sm transition-all flex flex-col items-center justify-center gap-1 text-center"
                           >
                             <FileText size={20} />
                             Ask Proof
@@ -488,7 +493,7 @@ const IssueDetails = () => {
                           <button 
                             disabled={isSubmitting}
                             onClick={() => handleAction('Rejected')}
-                            className="col-span-2 md:col-span-1 p-3 bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 rounded-xl font-semibold text-sm transition-colors flex flex-col items-center justify-center gap-1 text-center"
+                            className="p-3 min-h-[48px] bg-destructive/10 hover:bg-destructive/20 active:scale-95 text-destructive border border-destructive/20 rounded-xl font-semibold text-sm transition-all flex flex-col items-center justify-center gap-1 text-center"
                           >
                             <AlertTriangle size={20} />
                             Reject
@@ -496,7 +501,7 @@ const IssueDetails = () => {
                           <button 
                             disabled={isSubmitting}
                             onClick={() => handleAction('Rejected')}
-                            className="col-span-2 md:col-span-1 p-3 bg-secondary/30 hover:bg-secondary/50 text-muted-foreground border border-border rounded-xl font-semibold text-sm transition-colors flex flex-col items-center justify-center gap-1 text-center"
+                            className="p-3 min-h-[48px] bg-secondary/30 hover:bg-secondary/50 active:scale-95 text-muted-foreground border border-border rounded-xl font-semibold text-sm transition-all flex flex-col items-center justify-center gap-1 text-center"
                           >
                             <AlertTriangle size={20} />
                             Duplicate
