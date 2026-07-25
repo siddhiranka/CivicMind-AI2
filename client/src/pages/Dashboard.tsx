@@ -16,6 +16,7 @@ const Dashboard = () => {
   const [selectedComplaint, setSelectedComplaint] = useState<any>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(() => !cachedComplaintsData);
+  const [visibleCount, setVisibleCount] = useState(10);
   const navigate = useNavigate();
   const { user } = useAuth();
   const { t, i18n } = useTranslation();
@@ -197,7 +198,12 @@ const Dashboard = () => {
 
           {/* Recent List */}
           <div className="bg-card border border-border rounded-3xl p-6 shadow-lg flex flex-col">
-            <h3 className="text-xl font-bold mb-6">{t('dashboard.recentReports')}</h3>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold">{t('dashboard.recentReports')}</h3>
+              <span className="text-xs font-bold px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full">
+                {complaints.length} Total Reports
+              </span>
+            </div>
             
             {isLoading ? (
               <div className="flex-1 flex flex-col items-center justify-center py-16 text-muted-foreground space-y-3">
@@ -213,12 +219,12 @@ const Dashboard = () => {
                 actionPath={user?.role === 'citizen' ? '/report' : undefined}
               />
             ) : (
-              <div className="space-y-4 overflow-y-auto pr-2 flex-1 max-h-[500px]">
-                {complaints.map(c => (
+              <div className="space-y-4 overflow-y-auto pr-2 flex-1 max-h-[520px]">
+                {complaints.slice(0, visibleCount).map(c => (
                   <div 
                     key={c._id || c.complaintId} 
                     onClick={() => navigate(`/issue/${c.complaintId}`)}
-                    className="p-3 md:p-4 rounded-xl border border-border hover:border-primary/50 bg-background cursor-pointer transition-colors active:scale-95 transition-transform"
+                    className="p-3.5 md:p-4 rounded-2xl border border-border hover:border-primary/50 bg-background cursor-pointer transition-colors active:scale-95 transition-transform shadow-sm"
                   >
                     <div className="flex justify-between items-start mb-2">
                       <h4 className="font-bold text-sm truncate pr-4">{c.issueDetected || c.originalDescription || "Report"}</h4>
@@ -239,6 +245,15 @@ const Dashboard = () => {
                     </div>
                   </div>
                 ))}
+
+                {visibleCount < complaints.length && (
+                  <button
+                    onClick={() => setVisibleCount(prev => prev + 10)}
+                    className="w-full py-3 bg-secondary/50 border border-border text-foreground hover:bg-secondary text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2"
+                  >
+                    Load More Previous Reports ({complaints.length - visibleCount} remaining)
+                  </button>
+                )}
               </div>
             )}
           </div>

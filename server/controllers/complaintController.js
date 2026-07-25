@@ -7,8 +7,36 @@ const { translateDynamicContent } = require('../utils/translator');
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// In-memory store — keeps newly created complaints when MongoDB is unavailable
-const memoryComplaints = [];
+const fs = require('fs');
+const path = require('path');
+
+const COMPLAINTS_FILE = path.join(__dirname, '../data/complaints_cache.json');
+
+function loadPersistedComplaints() {
+    try {
+        if (fs.existsSync(COMPLAINTS_FILE)) {
+            const raw = fs.readFileSync(COMPLAINTS_FILE, 'utf8');
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) return arr;
+        }
+    } catch (err) {
+        console.warn('Notice loading complaints cache:', err.message);
+    }
+    return [];
+}
+
+function savePersistedComplaints(arr) {
+    try {
+        const dir = path.dirname(COMPLAINTS_FILE);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(COMPLAINTS_FILE, JSON.stringify(arr, null, 2), 'utf8');
+    } catch (err) {
+        console.warn('Notice saving complaints cache:', err.message);
+    }
+}
+
+// Persistent store — keeps newly created complaints across server restarts and offline DB modes
+const memoryComplaints = loadPersistedComplaints();
 const submittedEvidenceHashes = new Map();
 
 const DEFAULT_COMPLAINTS = [
@@ -418,7 +446,8 @@ Return ONLY valid JSON — no markdown, no extra text:
             await newComplaint.save();
             const complaintObj = newComplaint.toObject ? newComplaint.toObject() : newComplaint;
             memoryComplaints.unshift(complaintObj);
-            if (memoryComplaints.length > 50) memoryComplaints.pop();
+            if (memoryComplaints.length > 100) memoryComplaints.pop();
+            savePersistedComplaints(memoryComplaints);
         } catch (saveErr) {
             console.warn('DB save failed, returning fallback mock complaint:', saveErr.message);
             newComplaint = {
@@ -448,7 +477,8 @@ Return ONLY valid JSON — no markdown, no extra text:
                 }
             };
             memoryComplaints.unshift(newComplaint);
-            if (memoryComplaints.length > 50) memoryComplaints.pop();
+            if (memoryComplaints.length > 100) memoryComplaints.pop();
+            savePersistedComplaints(memoryComplaints);
         }
 
         res.status(201).json({
