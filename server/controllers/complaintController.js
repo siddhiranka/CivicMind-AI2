@@ -506,7 +506,7 @@ exports.getComplaints = async (req, res) => {
         const seenKeys = new Set();
         const combined = [];
 
-        // Add memory complaints first (most recent session entries)
+        // 1. Add memory complaints first (most recent session entries)
         for (const mc of memoryComplaints) {
             const key = String(mc.complaintId || mc._id);
             if (key && !seenKeys.has(key)) {
@@ -515,7 +515,7 @@ exports.getComplaints = async (req, res) => {
             }
         }
 
-        // Add DB complaints
+        // 2. Add DB complaints
         for (const dbc of dbComplaints) {
             const key = String(dbc.complaintId || dbc._id);
             if (key && !seenKeys.has(key)) {
@@ -524,10 +524,18 @@ exports.getComplaints = async (req, res) => {
             }
         }
 
-        // Fallback to defaults if no memory or DB complaints exist
-        let resultComplaints = combined.length > 0 ? combined : DEFAULT_COMPLAINTS;
+        // 3. Add default seed complaints so initial reports persist when new complaints are submitted
+        for (const defc of DEFAULT_COMPLAINTS) {
+            const key = String(defc.complaintId || defc._id);
+            if (key && !seenKeys.has(key)) {
+                seenKeys.add(key);
+                combined.push(defc);
+            }
+        }
 
-        // Sort descending by createdAt
+        let resultComplaints = combined;
+
+        // Sort descending by createdAt (newest first)
         resultComplaints.sort((a, b) => new Date(b.createdAt || Date.now()).getTime() - new Date(a.createdAt || Date.now()).getTime());
 
         if (req.user && req.user.role === 'citizen') {
