@@ -647,6 +647,9 @@ exports.trackComplaint = async (req, res) => {
     }
 };
 
+exports.memoryComplaints = memoryComplaints;
+exports.DEFAULT_COMPLAINTS = DEFAULT_COMPLAINTS;
+
 exports.seedComplaints = async (req, res) => {
     try {
         await Complaint.deleteMany({});

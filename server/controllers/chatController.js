@@ -1,4 +1,5 @@
 const Complaint = require('../models/Complaint');
+const mongoose = require('mongoose');
 const { GoogleGenAI } = require('@google/genai');
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -11,37 +12,74 @@ exports.chatWithAI = async (req, res) => {
         const langName = language === 'hi' ? 'Hindi' : language === 'mr' ? 'Marathi' : 'English';
         const apiKey = process.env.GEMINI_API_KEY;
 
-        // Fetch recent complaints to give the AI context
-        let recentComplaints = [];
-        try {
-            recentComplaints = await Complaint.find().sort({ createdAt: -1 }).limit(20);
-        } catch (dbErr) {
-            console.warn('DB fetch warning in chat:', dbErr.message);
+        // Fetch recent complaints from DB, memory store, or seed defaults
+        let dbComplaints = [];
+        if (mongoose.connection.readyState === 1) {
+            try {
+                dbComplaints = await Complaint.find().sort({ createdAt: -1 }).limit(20).lean();
+            } catch (dbErr) {
+                console.warn('DB fetch warning in chat:', dbErr.message);
+            }
         }
-        
+
+        // Combine memory complaints, db complaints, and default complaints
+        const { memoryComplaints, DEFAULT_COMPLAINTS } = require('./complaintController');
+        const seenKeys = new Set();
+        const combined = [];
+
+        if (memoryComplaints && Array.isArray(memoryComplaints)) {
+            for (const mc of memoryComplaints) {
+                const key = String(mc.complaintId || mc._id);
+                if (key && !seenKeys.has(key)) {
+                    seenKeys.add(key);
+                    combined.push(mc);
+                }
+            }
+        }
+
+        for (const dbc of dbComplaints) {
+            const key = String(dbc.complaintId || dbc._id);
+            if (key && !seenKeys.has(key)) {
+                seenKeys.add(key);
+                combined.push(dbc);
+            }
+        }
+
+        if (DEFAULT_COMPLAINTS && Array.isArray(DEFAULT_COMPLAINTS)) {
+            for (const defc of DEFAULT_COMPLAINTS) {
+                const key = String(defc.complaintId || defc._id);
+                if (key && !seenKeys.has(key)) {
+                    seenKeys.add(key);
+                    combined.push(defc);
+                }
+            }
+        }
+
         // Structure data for context
-        const contextData = recentComplaints.map(c => ({
+        const contextData = combined.map(c => ({
             id: c.complaintId || c._id,
-            issue: c.issueDetected || c.originalDescription,
-            description: c.enhancedDescription || c.originalDescription,
+            issue: c.issueDetected || c.originalDescription || 'Civic Issue',
+            description: c.enhancedDescription || c.originalDescription || 'Reported issue under municipal review.',
             severity: c.severity || 'Medium',
             priorityScore: c.priorityScore || 75,
             status: c.status || 'Pending',
-            location: c.location?.address || 'Municipal area'
+            location: c.location?.address || 'Municipal District',
+            department: c.suggestedDepartment || 'Road Maintenance'
         }));
 
-        const prompt = `You are CivicMind AI, an intelligent civic assistant for citizens and city officers. Answer the user's question clearly, helpfully, and concisely.
+        const prompt = `You are CivicMind AI, an expert civic infrastructure assistant for citizens and municipal city officers. Answer the user's question with high accuracy, helpfulness, and conciseness.
 
 User Question: "${message}"
 
-Live Community Complaints Context:
-${contextData.length > 0 ? contextData.slice(0, 10).map(c => `- ${c.issue} (${c.severity} Severity, Status: ${c.status}, Location: ${c.location})`).join('\n') : 'No active complaint records in database.'}
+Live Community Complaints Context Database:
+${contextData.slice(0, 15).map(c => `• [ID: ${c.id}] ${c.issue} | Severity: ${c.severity} | Status: ${c.status} | Department: ${c.department} | Location: ${c.location}`).join('\n')}
 
-RULES:
-- Answer directly and helpfully in 2-4 sentences or short bullet points.
-- If asking about urgent/critical issues, reference the live complaints data above.
-- If asking how to report, explain taking a clear photo, setting location (or live GPS), and running AI analysis.
-- Language: Respond entirely in ${langName}.`;
+INSTRUCTIONS:
+1. If the user asks about a specific complaint ID (e.g. CM-1001, CM-1002, etc.), search the Live Community Complaints Context Database above and provide the exact status, location, severity, and department for that ID.
+2. If asking about critical/urgent hazards, summarize the critical reports listed above.
+3. If asking how to report an issue, explain step-by-step: click "Report Issue", enter description/GPS, upload an image or video photo, and click "Run AI Analysis".
+4. Format your response cleanly with bullet points and bold text for key details.
+5. Language: You MUST respond in ${langName}.`;
 
         if (apiKey && apiKey.length > 5) {
             try {
@@ -53,7 +91,7 @@ RULES:
                         contents: [{ text: prompt }]
                     });
                 } catch (err20) {
-                    console.warn('gemini-2.0-flash failed, trying gemini-1.5-flash:', err20.message);
+                    console.warn('gemini-2.0-flash failed in chat, trying gemini-1.5-flash:', err20.message);
                     response = await aiInstance.models.generateContent({
                         model: 'gemini-1.5-flash',
                         contents: [{ text: prompt }]
@@ -64,44 +102,52 @@ RULES:
                     return res.json({ reply: response.text });
                 }
             } catch (aiError) {
-                console.warn('Gemini API call error in chat, using intelligent assistant engine:', aiError.message);
+                console.warn('Gemini API call error in chat, using fallback contextual engine:', aiError.message);
             }
         }
 
-        // Intelligent Contextual Assistant Engine (Fallback)
+        // Contextual Fallback Assistant Engine
         let reply = "";
         const lowerMsg = message.toLowerCase();
 
-        if (lowerMsg.includes('urgent') || lowerMsg.includes('critical') || lowerMsg.includes('hazard') || lowerMsg.includes('danger')) {
+        // Check if user is asking for a specific ID
+        const matchId = lowerMsg.match(/cm-\d{4}/i);
+        if (matchId) {
+            const targetId = matchId[0].toUpperCase();
+            const found = contextData.find(c => String(c.id).toUpperCase() === targetId);
+            if (found) {
+                reply = `📋 **Complaint ${found.id} Details**:\n\n` +
+                    `• **Issue**: ${found.issue}\n` +
+                    `• **Status**: ${found.status}\n` +
+                    `• **Severity**: ${found.severity}\n` +
+                    `• **Assigned Department**: ${found.department}\n` +
+                    `• **Location**: ${found.location}\n\n` +
+                    `You can track detailed updates on the **Track Complaint** page.`;
+            } else {
+                reply = `No active record found for tracking ID **${targetId}**. Please verify your Complaint ID or check the Track Complaint page.`;
+            }
+        } else if (lowerMsg.includes('urgent') || lowerMsg.includes('critical') || lowerMsg.includes('hazard') || lowerMsg.includes('danger')) {
             const criticals = contextData.filter(c => c.severity === 'Critical' || c.severity === 'High');
             if (criticals.length > 0) {
-                reply = `Currently, there are **${criticals.length} high-priority issues** flagged in your district:\n\n` +
-                    criticals.slice(0, 3).map(c => `• **${c.issue}** at *${c.location}* (Status: ${c.status})`).join('\n') +
-                    `\n\nOfficers are dispatched based on AI severity ranking. You can track their status on the Dashboard.`;
+                reply = `Currently, there are **${criticals.length} high-priority civic issues** recorded in your district:\n\n` +
+                    criticals.slice(0, 3).map(c => `• **${c.issue}** [${c.id}] at *${c.location}* (Status: ${c.status})`).join('\n') +
+                    `\n\nMunicipal crews are dispatched based on AI severity rankings. You can track live updates on the Dashboard.`;
             } else {
                 reply = `No critical hazards are currently active in your district. All reported issues are under standard municipal review.`;
             }
         } else if (lowerMsg.includes('report') || lowerMsg.includes('submit') || lowerMsg.includes('create') || lowerMsg.includes('how to')) {
-            reply = `To report a civic issue:\n\n` +
-                `1. Click **"Report Issue"** in the top navigation.\n` +
-                `2. Describe the problem or use **Voice Input** / **Live GPS** detection.\n` +
-                `3. Upload a clear photo of the infrastructure issue.\n` +
-                `4. Click **"Run AI Analysis"** — Gemini Vision will inspect the image and route it automatically!`;
-        } else if (lowerMsg.includes('pothole') || lowerMsg.includes('road') || lowerMsg.includes('water') || lowerMsg.includes('garbage')) {
-            const matches = contextData.filter(c => c.issue.toLowerCase().includes(lowerMsg) || c.description.toLowerCase().includes(lowerMsg));
-            if (matches.length > 0) {
-                reply = `We found **${matches.length} matching report(s)** in community records:\n\n` +
-                    matches.slice(0, 3).map(c => `• **${c.issue}** at *${c.location}* — Priority: ${c.severity}`).join('\n') +
-                    `\n\nYou can track updates or report additional evidence anytime.`;
-            } else {
-                reply = `No matching complaints found in current records. Please use the **"Report Issue"** tab to submit a new report with a photo so AI vision can analyze it.`;
-            }
+            reply = `To report a civic issue on CivicMind:\n\n` +
+                `1. Click **"Report Issue"** in the navigation header.\n` +
+                `2. Type the issue description or use **Voice Input** / **Live GPS** detection.\n` +
+                `3. Upload evidence photo or video (up to 50MB).\n` +
+                `4. Click **"Run AI Analysis"** — Gemini Vision will analyze the scene and route it automatically!`;
         } else {
-            reply = `Hello! I am **CivicMind AI Assistant**. I analyze live city infrastructure reports, severity levels, and department routing.\n\n` +
+            reply = `Hello! I am **CivicMind AI Assistant**.\n\n` +
                 `You can ask me about:\n` +
+                `• **Complaint Status** (e.g., "What is the status of CM-1001?")\n` +
                 `• **Urgent / Critical hazard reports** in your area\n` +
-                `• **How to submit a new civic issue** with live GPS\n` +
-                `• **Complaint resolution status and department tracking**`;
+                `• **Step-by-step instructions on reporting an issue**\n` +
+                `• **Department routing and severity rankings**`;
         }
 
         res.json({ reply });
