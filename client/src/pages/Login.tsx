@@ -20,8 +20,8 @@ const Login = () => {
     setError('');
     setIsSubmitting(true);
 
-    const loginEmail = customEmail || email;
-    const loginPassword = customPassword || password;
+    const loginEmail = (customEmail || email).trim();
+    const loginPassword = (customPassword || password).trim();
 
     try {
       const res = await fetch('/api/auth/login', {
