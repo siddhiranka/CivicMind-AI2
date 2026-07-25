@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -7,23 +8,8 @@ const generateToken = (id, role, email) => {
     return jwt.sign({ id, role, email }, secret, { expiresIn: '30d' });
 };
 
-// Fallback demo users in case DB is unreachable
-const DEMO_USERS = [
-    {
-        _id: '65e01234567890abcdef0001',
-        name: 'Siddhi (Citizen Demo)',
-        email: 'citizen@demo.com',
-        passwordHash: '$2a$10$eE8h...demo', // matched by string or demo credentials
-        role: 'citizen'
-    },
-    {
-        _id: '65e01234567890abcdef0002',
-        name: 'Rahul Sharma (Officer Demo)',
-        email: 'officer@demo.com',
-        passwordHash: '$2a$10$eE8h...demo',
-        role: 'officer'
-    }
-];
+// In-memory store for newly registered accounts so sign-in works even if DB is in resilient mode
+const registeredMemoryUsers = new Map();
 
 exports.register = async (req, res) => {
     try {
@@ -33,43 +19,60 @@ exports.register = async (req, res) => {
             return res.status(400).json({ error: 'Please fill all required fields' });
         }
 
-        let user;
-        try {
-            const userExists = await User.findOne({ email });
-            if (userExists) {
-                return res.status(400).json({ error: 'User with this email already exists' });
-            }
+        const normEmail = String(email).toLowerCase().trim();
 
-            const salt = await bcrypt.genSalt(10);
-            const hashedPassword = await bcrypt.hash(password, salt);
-
-            user = await User.create({
-                name,
-                email,
-                password: hashedPassword,
-                role: 'citizen'
-            });
-        } catch (dbErr) {
-            console.warn('DB unavailable during register, returning instant session:', dbErr.message);
-            user = {
-                id: 'usr_' + Date.now(),
-                _id: 'usr_' + Date.now(),
-                name,
-                email,
-                role: 'citizen'
-            };
+        // Check if user exists in memory cache
+        if (registeredMemoryUsers.has(normEmail)) {
+            return res.status(400).json({ error: 'User with this email already exists' });
         }
 
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+        const generatedUserId = 'usr_' + Date.now();
+
+        let userObj = {
+            id: generatedUserId,
+            _id: generatedUserId,
+            name: name.trim(),
+            email: normEmail,
+            passwordHash: hashedPassword,
+            role: 'citizen'
+        };
+
+        // Try saving to MongoDB if connected
+        if (mongoose.connection.readyState === 1) {
+            try {
+                const userExists = await User.findOne({ email: normEmail });
+                if (userExists) {
+                    return res.status(400).json({ error: 'User with this email already exists' });
+                }
+
+                const dbUser = await User.create({
+                    name: name.trim(),
+                    email: normEmail,
+                    password: hashedPassword,
+                    role: 'citizen'
+                });
+                userObj.id = String(dbUser._id);
+                userObj._id = String(dbUser._id);
+            } catch (dbErr) {
+                console.warn('DB register notice:', dbErr.message);
+            }
+        }
+
+        // Always store in memory cache so login works instantly across page reloads
+        registeredMemoryUsers.set(normEmail, userObj);
+
         res.status(201).json({
-            _id: user.id || user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role || 'citizen',
-            token: generateToken(user.id || user._id, user.role || 'citizen', user.email)
+            _id: userObj.id,
+            name: userObj.name,
+            email: userObj.email,
+            role: userObj.role,
+            token: generateToken(userObj.id, userObj.role, userObj.email)
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: error.message || 'Server error' });
+        console.error('Register error:', error);
+        res.status(500).json({ error: error.message || 'Server error during registration' });
     }
 };
 
@@ -81,27 +84,53 @@ exports.login = async (req, res) => {
             return res.status(400).json({ error: 'Please enter both email and password' });
         }
 
-        // 1. Check database first
-        let dbSuccess = false;
-        try {
-            const user = await User.findOne({ email });
-            if (user && (await bcrypt.compare(password, user.password))) {
-                dbSuccess = true;
+        const normEmail = String(email).toLowerCase().trim();
+
+        // 1. Check in-memory registered users first (instant match for newly created accounts)
+        if (registeredMemoryUsers.has(normEmail)) {
+            const memUser = registeredMemoryUsers.get(normEmail);
+            const isMatch = await bcrypt.compare(password, memUser.passwordHash);
+            if (isMatch) {
                 return res.json({
-                    _id: user.id,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role,
-                    token: generateToken(user._id, user.role, user.email)
+                    _id: memUser.id,
+                    name: memUser.name,
+                    email: memUser.email,
+                    role: memUser.role,
+                    token: generateToken(memUser.id, memUser.role, memUser.email)
                 });
             }
-        } catch (dbErr) {
-            console.warn('DB lookup failed, checking demo fallback accounts:', dbErr.message);
         }
 
-        // 2. Fallback check for demo accounts if DB query failed or didn't match
-        const lowerEmail = email.toLowerCase().trim();
-        if (lowerEmail === 'citizen@demo.com' && password === 'Citizen@123') {
+        // 2. Check MongoDB database if connected
+        if (mongoose.connection.readyState === 1) {
+            try {
+                const dbUser = await User.findOne({ email: normEmail });
+                if (dbUser && (await bcrypt.compare(password, dbUser.password))) {
+                    // Update memory cache
+                    registeredMemoryUsers.set(normEmail, {
+                        id: String(dbUser._id),
+                        _id: String(dbUser._id),
+                        name: dbUser.name,
+                        email: dbUser.email,
+                        passwordHash: dbUser.password,
+                        role: dbUser.role
+                    });
+
+                    return res.json({
+                        _id: String(dbUser._id),
+                        name: dbUser.name,
+                        email: dbUser.email,
+                        role: dbUser.role,
+                        token: generateToken(String(dbUser._id), dbUser.role, dbUser.email)
+                    });
+                }
+            } catch (dbErr) {
+                console.warn('DB login lookup notice:', dbErr.message);
+            }
+        }
+
+        // 3. Fallback check for demo accounts
+        if (normEmail === 'citizen@demo.com' && password === 'Citizen@123') {
             return res.json({
                 _id: '65e01234567890abcdef0001',
                 name: 'Siddhi (Citizen Demo)',
@@ -111,7 +140,7 @@ exports.login = async (req, res) => {
             });
         }
 
-        if (lowerEmail === 'officer@demo.com' && password === 'Officer@123') {
+        if (normEmail === 'officer@demo.com' && password === 'Officer@123') {
             return res.json({
                 _id: '65e01234567890abcdef0002',
                 name: 'Rahul Sharma (Officer Demo)',
@@ -121,11 +150,9 @@ exports.login = async (req, res) => {
             });
         }
 
-        if (dbSuccess === false) {
-            return res.status(401).json({ error: 'Invalid email or password' });
-        }
+        return res.status(401).json({ error: 'Invalid email or password' });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: error.message || 'Server error' });
+        console.error('Login error:', error);
+        res.status(500).json({ error: error.message || 'Server error during login' });
     }
 };
