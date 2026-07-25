@@ -125,6 +125,7 @@ exports.login = async (req, res) => {
 
         const normEmail = String(email).toLowerCase().trim();
         const inputPass = String(password).trim();
+        console.log(`[AUTH LOGIN ATTEMPT] Email: "${normEmail}"`);
 
         // 1. Check persistent memory store first (instant match for newly created accounts)
         if (registeredMemoryUsers.has(normEmail)) {
@@ -139,6 +140,7 @@ exports.login = async (req, res) => {
             }
 
             if (isMatch) {
+                console.log(`[AUTH SUCCESS - MEMORY] Verified user: "${normEmail}"`);
                 return res.json({
                     _id: memUser.id,
                     name: memUser.name,
@@ -146,6 +148,8 @@ exports.login = async (req, res) => {
                     role: memUser.role,
                     token: generateToken(memUser.id, memUser.role, memUser.email)
                 });
+            } else {
+                console.warn(`[AUTH FAIL - MEMORY] Password mismatch for user: "${normEmail}"`);
             }
         }
 
@@ -154,6 +158,7 @@ exports.login = async (req, res) => {
             try {
                 const dbUser = await User.findOne({ email: normEmail });
                 if (dbUser && (await bcrypt.compare(inputPass, dbUser.password))) {
+                    console.log(`[AUTH SUCCESS - DB] Verified user: "${normEmail}"`);
                     // Update persistent cache
                     const cacheObj = {
                         id: String(dbUser._id),
@@ -176,12 +181,13 @@ exports.login = async (req, res) => {
                     });
                 }
             } catch (dbErr) {
-                console.warn('DB login lookup notice:', dbErr.message);
+                console.warn('[AUTH DB LOOKUP ERROR]:', dbErr.message);
             }
         }
 
         // 3. Fallback check for demo accounts
         if (normEmail === 'citizen@demo.com' && inputPass === 'Citizen@123') {
+            console.log(`[AUTH SUCCESS - DEMO] Citizen demo login`);
             return res.json({
                 _id: '65e01234567890abcdef0001',
                 name: 'Siddhi (Citizen Demo)',
@@ -192,6 +198,7 @@ exports.login = async (req, res) => {
         }
 
         if (normEmail === 'officer@demo.com' && inputPass === 'Officer@123') {
+            console.log(`[AUTH SUCCESS - DEMO] Officer demo login`);
             return res.json({
                 _id: '65e01234567890abcdef0002',
                 name: 'Rahul Sharma (Officer Demo)',
@@ -201,6 +208,7 @@ exports.login = async (req, res) => {
             });
         }
 
+        console.warn(`[AUTH REJECT] No matching credentials for "${normEmail}". User in memory: ${registeredMemoryUsers.has(normEmail)}`);
         return res.status(401).json({ error: 'Invalid email or password' });
     } catch (error) {
         console.error('Login error:', error);
