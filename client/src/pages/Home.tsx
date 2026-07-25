@@ -26,13 +26,13 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
     <div className="w-full bg-background text-foreground flex flex-col scroll-smooth">
       
       {/* 1. HERO SECTION */}
-      <section className="w-full min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 sm:px-6 md:px-8 py-8 md:py-12 relative overflow-hidden bg-background snap-start">
+      <section className="w-full py-12 md:py-20 px-4 sm:px-6 md:px-8 relative overflow-hidden bg-background flex flex-col items-center justify-center">
         
         {/* Hero Background Effects */}
         <div className="absolute top-8 left-1/2 -translate-x-1/2 w-[600px] md:w-[900px] h-[350px] md:h-[450px] bg-blue-500/15 rounded-full blur-[140px] pointer-events-none" />
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_75%_50%_at_50%_40%,#000_70%,transparent_100%)] pointer-events-none" />
 
-        <div className="flex flex-col items-center justify-center w-full max-w-[1200px] mx-auto z-10 relative text-center my-auto space-y-5 md:space-y-6">
+        <div className="flex flex-col items-center justify-center w-full max-w-[1200px] mx-auto z-10 relative text-center space-y-5 md:space-y-6">
           
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
@@ -157,8 +157,8 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
       </section>
 
       {/* 2. HOW AI ACCELERATES RESOLUTION */}
-      <section className="w-full min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 sm:px-6 md:px-8 py-10 md:py-14 bg-secondary/20 border-y border-border relative snap-start">
-        <div className="max-w-7xl mx-auto w-full flex flex-col items-center justify-center my-auto">
+      <section className="w-full py-12 md:py-20 px-4 sm:px-6 md:px-8 bg-secondary/20 border-y border-border relative flex flex-col items-center justify-center">
+        <div className="max-w-7xl mx-auto w-full flex flex-col items-center justify-center">
           <motion.div 
             initial={{ opacity: 0, y: 25 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -212,10 +212,10 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
       </section>
 
       {/* 3. REAL-WORLD IMPACT */}
-      <section className="w-full min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 sm:px-6 md:px-8 py-10 md:py-14 relative overflow-hidden snap-start">
+      <section className="w-full py-12 md:py-20 px-4 sm:px-6 md:px-8 relative overflow-hidden flex flex-col items-center justify-center">
         <div className="absolute top-1/2 right-1/4 w-[450px] h-[450px] bg-primary/5 rounded-full blur-[140px] pointer-events-none -translate-y-1/2" />
         
-        <div className="max-w-6xl w-full mx-auto my-auto">
+        <div className="max-w-6xl w-full mx-auto">
           <motion.div 
             initial={{ opacity: 0, y: 25 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -284,8 +284,8 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
       </section>
 
       {/* 4. WHY CIVICMIND AI? */}
-      <section className="w-full min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 sm:px-6 md:px-8 py-10 md:py-14 bg-secondary/10 border-y border-border relative snap-start">
-        <div className="max-w-7xl mx-auto w-full flex flex-col items-center justify-center my-auto">
+      <section className="w-full py-12 md:py-20 px-4 sm:px-6 md:px-8 bg-secondary/10 border-y border-border relative flex flex-col items-center justify-center">
+        <div className="max-w-7xl mx-auto w-full flex flex-col items-center justify-center">
           <motion.div 
             initial={{ opacity: 0, y: 25 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -355,10 +355,10 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
       </section>
 
       {/* 5. FINAL CTA */}
-      <section className="w-full min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 sm:px-6 md:px-8 py-12 md:py-16 relative overflow-hidden bg-gradient-to-b from-background via-primary/5 to-background text-center snap-start">
+      <section className="w-full py-12 md:py-20 px-4 sm:px-6 md:px-8 relative overflow-hidden bg-gradient-to-b from-background via-primary/5 to-background text-center flex flex-col items-center justify-center">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] md:w-[800px] h-[350px] bg-primary/10 rounded-full blur-[150px] pointer-events-none" />
 
-        <div className="max-w-3xl mx-auto z-10 relative space-y-6 my-auto">
+        <div className="max-w-3xl mx-auto z-10 relative space-y-6">
           <motion.div
             initial={{ opacity: 0, y: 25 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -403,7 +403,7 @@ const Home = ({ onOpenChat }: { onOpenChat: () => void }) => {
       </section>
 
       {/* 6. FOOTER */}
-      <footer className="w-full bg-card border-t border-border flex flex-col justify-between p-5 sm:p-6 md:p-10 relative z-10 snap-start">
+      <footer className="w-full bg-card border-t border-border flex flex-col justify-between p-5 sm:p-6 md:p-8 relative z-10">
         <div className="max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-2 gap-6 items-center mb-6">
           <div>
             <h3 className="text-xl font-extrabold text-foreground mb-1.5">CivicMind AI</h3>
