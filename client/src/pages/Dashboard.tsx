@@ -76,6 +76,7 @@ const Dashboard = () => {
   const criticalCount = complaints.filter(c => c.severity === 'Critical').length;
   const pendingCount = complaints.filter(c => c.status === 'Pending').length;
   const resolvedCount = complaints.filter(c => c.status === 'Resolved').length;
+  const newCount = complaints.filter(c => c.status === 'New').length;
 
   const handleMarkerClick = (complaint: any) => {
     setSelectedComplaint(complaint);
@@ -234,6 +235,7 @@ const Dashboard = () => {
                         {c.severity}
                       </span>
                     </div>
+<div className="text-sm text-muted-foreground line-clamp-2 mb-2">{c.enhancedDescription || ''}</div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
                       <span className="truncate">{c.location?.address?.split(',')[0]}</span>
                       <span>•</span>

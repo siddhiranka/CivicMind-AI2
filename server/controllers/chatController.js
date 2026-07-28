@@ -1,9 +1,11 @@
 const Complaint = require('../models/Complaint');
 const mongoose = require('mongoose');
 const { GoogleGenAI } = require('@google/genai');
+const { translateDynamicContent } = require('../utils/translator');
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+const { getHistory, addMessage } = require('../utils/chatHistory');
 exports.chatWithAI = async (req, res) => {
     try {
         const { message, language } = req.body;
@@ -183,6 +185,14 @@ INSTRUCTIONS:
                 `  - Type a Complaint ID (e.g. *CM-1001*) to get exact status updates.\n` +
                 `  - Ask about *urgent hazards*, *road maintenance*, or *sanitation*.\n` +
                 `  - Click **"Report Issue"** to submit new civic evidence with AI analysis.`;
+        }
+
+        if (language && language !== 'en') {
+            try {
+                reply = await translateDynamicContent(reply, language);
+            } catch (errTr) {
+                console.warn('Fallback translation error:', errTr.message);
+            }
         }
 
         res.json({ reply });

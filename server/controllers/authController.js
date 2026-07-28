@@ -21,13 +21,22 @@ try {
     console.warn('Could not create data dir:', e.message);
 }
 
-// Load registered users from disk cache
+// Load registered users from disk cache with key normalization
 function loadPersistedUsers() {
     try {
         if (fs.existsSync(USERS_FILE)) {
             const raw = fs.readFileSync(USERS_FILE, 'utf8');
             const arr = JSON.parse(raw);
-            return new Map(arr);
+            const map = new Map();
+            if (Array.isArray(arr)) {
+                for (const [k, v] of arr) {
+                    if (k && v) {
+                        const normKey = String(k).toLowerCase().trim();
+                        map.set(normKey, v);
+                    }
+                }
+            }
+            return map;
         }
     } catch (err) {
         console.warn('Notice loading users cache:', err.message);
@@ -57,36 +66,88 @@ exports.register = async (req, res) => {
         }
 
         const normEmail = String(email).toLowerCase().trim();
+        const inputPass = String(password).trim();
 
-        // Check if user exists in persistent memory store
+        // If user already exists in memory cache, verify if credentials match for auto-login
         if (registeredMemoryUsers.has(normEmail)) {
-            return res.status(400).json({ error: 'User with this email already exists' });
+            const memUser = registeredMemoryUsers.get(normEmail);
+            const passHash = memUser.passwordHash || memUser.password;
+            const rawPass = memUser.rawPassword || memUser.password;
+            let isMatch = false;
+
+            if (passHash) {
+                try {
+                    isMatch = await bcrypt.compare(inputPass, passHash);
+                } catch (e) {}
+            }
+
+            if (!isMatch && rawPass && String(rawPass).trim() === inputPass) {
+                isMatch = true;
+            }
+
+            if (isMatch) {
+                console.log(`[AUTH REGISTER AUTO-LOGIN] Existing user "${normEmail}" signed in automatically`);
+                return res.status(200).json({
+                    _id: memUser.id || memUser._id,
+                    name: memUser.name,
+                    email: normEmail,
+                    role: memUser.role || 'citizen',
+                    token: generateToken(memUser.id || memUser._id, memUser.role || 'citizen', normEmail)
+                });
+            }
+
+            return res.status(400).json({ error: 'An account with this email already exists. Please Sign In.' });
         }
 
         const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
+        const hashedPassword = await bcrypt.hash(inputPass, salt);
         const generatedUserId = 'usr_' + Date.now();
 
         let userObj = {
             id: generatedUserId,
             _id: generatedUserId,
-            name: name.trim(),
+            name: String(name).trim(),
             email: normEmail,
             passwordHash: hashedPassword,
-            rawPassword: String(password).trim(),
+            rawPassword: inputPass,
             role: 'citizen'
         };
 
-        // Try saving to MongoDB if connected
+        // Save to MongoDB if connected
         if (mongoose.connection.readyState === 1) {
             try {
-                const userExists = await User.findOne({ email: normEmail });
+                const userExists = await User.findOne({ 
+                    email: { $regex: new RegExp(`^${normEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}$`, 'i') } 
+                });
+                
                 if (userExists) {
-                    return res.status(400).json({ error: 'User with this email already exists' });
+                    let isDbMatch = false;
+                    try {
+                        isDbMatch = await bcrypt.compare(inputPass, userExists.password);
+                    } catch (e) {}
+                    if (!isDbMatch && userExists.password === inputPass) isDbMatch = true;
+
+                    if (isDbMatch) {
+                        userObj.id = String(userExists._id);
+                        userObj._id = String(userExists._id);
+                        userObj.name = userExists.name;
+                        registeredMemoryUsers.set(normEmail, userObj);
+                        savePersistedUsers(registeredMemoryUsers);
+
+                        return res.status(200).json({
+                            _id: String(userExists._id),
+                            name: userExists.name,
+                            email: normEmail,
+                            role: userExists.role || 'citizen',
+                            token: generateToken(String(userExists._id), userExists.role || 'citizen', normEmail)
+                        });
+                    }
+
+                    return res.status(400).json({ error: 'An account with this email already exists. Please Sign In.' });
                 }
 
                 const dbUser = await User.create({
-                    name: name.trim(),
+                    name: String(name).trim(),
                     email: normEmail,
                     password: hashedPassword,
                     role: 'citizen'
@@ -127,26 +188,31 @@ exports.login = async (req, res) => {
         const inputPass = String(password).trim();
         console.log(`[AUTH LOGIN ATTEMPT] Email: "${normEmail}"`);
 
-        // 1. Check persistent memory store first (instant match for newly created accounts)
+        // 1. Check persistent memory store first (instant match for all created accounts)
         if (registeredMemoryUsers.has(normEmail)) {
             const memUser = registeredMemoryUsers.get(normEmail);
+            const passHash = memUser.passwordHash || memUser.password;
+            const rawPass = memUser.rawPassword || memUser.password;
             let isMatch = false;
-            try {
-                isMatch = await bcrypt.compare(inputPass, memUser.passwordHash);
-            } catch (e) {}
 
-            if (!isMatch && memUser.rawPassword && memUser.rawPassword === inputPass) {
+            if (passHash) {
+                try {
+                    isMatch = await bcrypt.compare(inputPass, passHash);
+                } catch (e) {}
+            }
+
+            if (!isMatch && rawPass && String(rawPass).trim() === inputPass) {
                 isMatch = true;
             }
 
             if (isMatch) {
                 console.log(`[AUTH SUCCESS - MEMORY] Verified user: "${normEmail}"`);
                 return res.json({
-                    _id: memUser.id,
+                    _id: memUser.id || memUser._id,
                     name: memUser.name,
-                    email: memUser.email,
-                    role: memUser.role,
-                    token: generateToken(memUser.id, memUser.role, memUser.email)
+                    email: normEmail,
+                    role: memUser.role || 'citizen',
+                    token: generateToken(memUser.id || memUser._id, memUser.role || 'citizen', normEmail)
                 });
             } else {
                 console.warn(`[AUTH FAIL - MEMORY] Password mismatch for user: "${normEmail}"`);
@@ -156,29 +222,42 @@ exports.login = async (req, res) => {
         // 2. Check MongoDB database if connected
         if (mongoose.connection.readyState === 1) {
             try {
-                const dbUser = await User.findOne({ email: normEmail });
-                if (dbUser && (await bcrypt.compare(inputPass, dbUser.password))) {
-                    console.log(`[AUTH SUCCESS - DB] Verified user: "${normEmail}"`);
-                    // Update persistent cache
-                    const cacheObj = {
-                        id: String(dbUser._id),
-                        _id: String(dbUser._id),
-                        name: dbUser.name,
-                        email: dbUser.email,
-                        passwordHash: dbUser.password,
-                        rawPassword: inputPass,
-                        role: dbUser.role
-                    };
-                    registeredMemoryUsers.set(normEmail, cacheObj);
-                    savePersistedUsers(registeredMemoryUsers);
+                const dbUser = await User.findOne({ 
+                    email: { $regex: new RegExp(`^${normEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}$`, 'i') } 
+                });
 
-                    return res.json({
-                        _id: String(dbUser._id),
-                        name: dbUser.name,
-                        email: dbUser.email,
-                        role: dbUser.role,
-                        token: generateToken(String(dbUser._id), dbUser.role, dbUser.email)
-                    });
+                if (dbUser) {
+                    let isDbMatch = false;
+                    try {
+                        isDbMatch = await bcrypt.compare(inputPass, dbUser.password);
+                    } catch (e) {}
+
+                    if (!isDbMatch && dbUser.password === inputPass) {
+                        isDbMatch = true;
+                    }
+
+                    if (isDbMatch) {
+                        console.log(`[AUTH SUCCESS - DB] Verified user: "${normEmail}"`);
+                        const cacheObj = {
+                            id: String(dbUser._id),
+                            _id: String(dbUser._id),
+                            name: dbUser.name,
+                            email: normEmail,
+                            passwordHash: dbUser.password,
+                            rawPassword: inputPass,
+                            role: dbUser.role || 'citizen'
+                        };
+                        registeredMemoryUsers.set(normEmail, cacheObj);
+                        savePersistedUsers(registeredMemoryUsers);
+
+                        return res.json({
+                            _id: String(dbUser._id),
+                            name: dbUser.name,
+                            email: normEmail,
+                            role: dbUser.role || 'citizen',
+                            token: generateToken(String(dbUser._id), dbUser.role || 'citizen', normEmail)
+                        });
+                    }
                 }
             } catch (dbErr) {
                 console.warn('[AUTH DB LOOKUP ERROR]:', dbErr.message);

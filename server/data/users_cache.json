@@ -10,5 +10,29 @@
       "rawPassword": "meet2003@",
       "role": "citizen"
     }
+  ],
+  [
+    "testuser@example.com",
+    {
+      "id": "6a6632cdf1c5613db0b544b0",
+      "_id": "6a6632cdf1c5613db0b544b0",
+      "name": "Test User",
+      "email": "testuser@example.com",
+      "passwordHash": "$2b$10$duVwUSgKgen/F3rIhSwiZOKMCm.6Xe1H.0ySjfG1NuBgRKdfBHpiK",
+      "rawPassword": "Test1234",
+      "role": "citizen"
+    }
+  ],
+  [
+    "citizen@demo.com",
+    {
+      "id": "6a60f3cd9f005fbc11ed51c7",
+      "_id": "6a60f3cd9f005fbc11ed51c7",
+      "name": "Siddhi (Citizen Demo)",
+      "email": "citizen@demo.com",
+      "passwordHash": "$2b$10$85dziVn2JZpy89ZGdxgWHuOOsHcaVGppGhmh7f.QvFUeR8FHcpIum",
+      "rawPassword": "Citizen@123",
+      "role": "citizen"
+    }
   ]
 ]

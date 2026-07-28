@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, X, Send, Bot, User, Trash2, Sparkles, Copy, Check } from 'lucide-react';
+import { MessageSquare, X, Send, Bot, User, Trash2, Sparkles, Copy, Check, Volume2, VolumeX } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -25,6 +25,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -49,15 +50,65 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
+  // Clean up speech synthesis on unmount or language change
+  useEffect(() => {
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [i18n.language]);
+
   const handleClear = () => {
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    setSpeakingIndex(null);
     setMessages(defaultMessages);
   };
 
   const handleCopy = (text: string, index: number) => {
     navigator.clipboard.writeText(text);
     setCopiedIndex(index);
-    toast.success('Copied answer to clipboard!');
+    toast.success(t('toast.copied', 'Copied answer to clipboard!'));
     setTimeout(() => setCopiedIndex(null), 2000);
+  };
+
+  const handleSpeak = (text: string, index: number) => {
+    if (!('speechSynthesis' in window)) {
+      toast.error(t('toast.ttsNotSupported', 'Text-to-Speech is not supported in this browser.'));
+      return;
+    }
+
+    if (speakingIndex === index && window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+      setSpeakingIndex(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    // Clean Markdown syntax for natural playback
+    const cleanText = text
+      .replace(/[#*`_~]/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/•/g, '')
+      .trim();
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    const langCode = i18n.language === 'hi' ? 'hi-IN' : i18n.language === 'mr' ? 'mr-IN' : 'en-IN';
+    utterance.lang = langCode;
+
+    // Select suitable voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const voiceMatch = voices.find(v => v.lang === langCode || v.lang.startsWith(langCode.split('-')[0]));
+    if (voiceMatch) {
+      utterance.voice = voiceMatch;
+    }
+
+    utterance.onend = () => setSpeakingIndex(null);
+    utterance.onerror = () => setSpeakingIndex(null);
+
+    setSpeakingIndex(index);
+    window.speechSynthesis.speak(utterance);
   };
 
   const handleSend = async (overrideMsg?: string) => {
@@ -134,16 +185,29 @@ const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
                 <div className={`max-w-[90%] p-4 rounded-3xl relative group ${msg.role === 'user' ? 'bg-gradient-to-br from-blue-600 to-blue-500 text-white rounded-br-sm shadow-md' : 'bg-secondary/60 backdrop-blur-md text-foreground rounded-bl-sm shadow-sm border border-white/5'}`}>
                   {msg.role === 'ai' ? (
                     <>
-                      <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-background/50 prose-strong:text-primary pr-6">
+                      <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-background/50 prose-strong:text-primary pr-12">
                          <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </div>
-                      <button
-                        onClick={() => handleCopy(msg.content, i)}
-                        className="absolute top-3 right-3 p-1.5 rounded-lg bg-background/60 hover:bg-background text-muted-foreground hover:text-primary transition-all opacity-80 hover:opacity-100 border border-border/40"
-                        title="Copy answer"
-                      >
-                        {copiedIndex === i ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                      </button>
+                      <div className="absolute top-3 right-3 flex items-center gap-1">
+                        <button
+                          onClick={() => handleSpeak(msg.content, i)}
+                          className={`p-1.5 rounded-lg border transition-all ${
+                            speakingIndex === i
+                              ? 'bg-primary text-primary-foreground border-primary animate-pulse'
+                              : 'bg-background/60 hover:bg-background text-muted-foreground hover:text-primary border-border/40'
+                          }`}
+                          title={speakingIndex === i ? 'Stop Speaking' : 'Read Aloud'}
+                        >
+                          {speakingIndex === i ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                        </button>
+                        <button
+                          onClick={() => handleCopy(msg.content, i)}
+                          className="p-1.5 rounded-lg bg-background/60 hover:bg-background text-muted-foreground hover:text-primary transition-all border border-border/40"
+                          title="Copy answer"
+                        >
+                          {copiedIndex === i ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                        </button>
+                      </div>
                     </>
                   ) : (
                      <p>{msg.content}</p>

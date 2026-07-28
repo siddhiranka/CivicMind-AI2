@@ -34,5 +34,7 @@ app.get('/', (req, res) => {
 app.use('/api/complaints', complaintRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
+const mapRoutes = require('./routes/mapRoutes');
+app.use('/api/map', mapRoutes);
 
 module.exports = app;

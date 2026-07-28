@@ -81,37 +81,62 @@ const IssueDetails = () => {
     navigate(`/issue/${complaintId.toUpperCase()}`);
   };
 
-  const handleAction = async (newStatus: string) => {
+  const handleUndo = async () => {
+    if (!complaint) return;
     setIsSubmitting(true);
     try {
-      const response = await fetch(`/api/complaints/${complaint._id}/review`, {
+      const response = await fetch(`/api/complaints/${complaint._id}/undo`, {
         method: 'PATCH',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user?.token}`
+          'Authorization': `Bearer ${user?.token}`,
         },
-        body: JSON.stringify({ 
-          status: newStatus, 
-          officerNotes: notes,
-          suggestedDepartment,
-          assignedOfficerName,
-          expectedCompletionDate,
-          budgetEstimation,
-          resourceAllocation 
-        })
       });
-      
-      if (!response.ok) throw new Error("Failed to update status");
-      
-      toast.success("Officer review submitted successfully");
-      navigate('/dashboard');
+      if (!response.ok) throw new Error('Failed to undo review');
+      const updatedComplaint = await response.json();
+      setComplaint(updatedComplaint);
+      toast.success('Undo successful');
     } catch (err) {
       console.error(err);
-      toast.error("Failed to submit review");
+      toast.error('Failed to undo');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+const handleAction = async (newStatus: string) => {
+  if (!complaint) return;
+  setIsSubmitting(true);
+  try {
+    const response = await fetch(`/api/complaints/${complaint._id}/review`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${user?.token}`,
+      },
+      body: JSON.stringify({
+        status: newStatus,
+        officerNotes: notes,
+        suggestedDepartment,
+        assignedOfficerName,
+        expectedCompletionDate,
+        budgetEstimation,
+        resourceAllocation,
+      }),
+    });
+
+    if (!response.ok) throw new Error("Failed to update status");
+
+    const updatedComplaint = await response.json();
+    setComplaint(updatedComplaint);
+    toast.success("Officer review submitted successfully");
+  } catch (err) {
+    console.error(err);
+    toast.error("Failed to submit review");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const steps = [
     { id: 'Reported', label: t('timeline.reported', 'Reported'), icon: <User size={16} /> },
@@ -248,6 +273,16 @@ const IssueDetails = () => {
                           "{complaint.originalDescription}"
                         </p>
                       </div>
+                      {/* Rejection Reason for Citizens */}
+                      {complaint.status === 'Rejected' && complaint.rejectionReason && (
+                        <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl">
+                          <div className="flex items-center gap-2 mb-1 text-destructive dark:text-destructive/80">
+                            <AlertTriangle size={18} />
+                            <span className="font-semibold">{t('status.Rejected', 'Rejected')}</span>
+                          </div>
+                          <p className="text-sm text-destructive">{complaint.rejectionReason}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -277,6 +312,12 @@ const IssueDetails = () => {
                               )}
                               {step.id === 'Reported' && isCompleted && (
                                 <p className="text-xs text-muted-foreground mt-1">{new Date(complaint.createdAt).toLocaleString()}</p>
+                              )}
+                              {/* Show officer name and review timestamp on Officer Review step */}
+                              {step.id === 'Officer Review' && isCompleted && complaint.officerName && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {t('issue.officer', 'Officer')}: {complaint.officerName} • {complaint.reviewedAt ? new Date(complaint.reviewedAt).toLocaleString() : ''}
+                                </p>
                               )}
                             </div>
                           </div>
@@ -506,6 +547,14 @@ const IssueDetails = () => {
                             <AlertTriangle size={20} />
                             Duplicate
                           </button>
+                           <button 
+                             disabled={isSubmitting}
+                             onClick={handleUndo}
+                             className="p-3 min-h-[48px] bg-gray-200 hover:bg-gray-300 active:scale-95 text-gray-800 border border-gray-300 rounded-xl font-semibold text-sm transition-all flex flex-col items-center justify-center gap-1 text-center"
+                           >
+                             Undo
+                           </button>
+
                         </div>
                       </div>
                     </>

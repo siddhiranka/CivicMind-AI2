@@ -6,12 +6,13 @@ const complaintSchema = new mongoose.Schema({
     enhancedDescription: { type: String },
     imageUrl: { type: String, required: true },
     severity: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], default: 'Medium' },
-    confidence: { type: Number },
+    isCivicIssue: { type: Boolean, default: true },
     riskAnalysis: { type: String },
     suggestedDepartment: { type: String },
     estimatedPriority: { type: String },
     priorityScore: { type: Number },
     status: { type: String, enum: ['Pending', 'Assigned', 'In Progress', 'Resolved', 'Rejected', 'Needs Manual Inspection', 'Needs More Evidence'], default: 'Pending' },
+    previousStatus: { type: String, enum: ['Pending', 'Assigned', 'In Progress', 'Resolved', 'Rejected', 'Needs Manual Inspection', 'Needs More Evidence'], default: 'Pending' },
     location: {
         lat: { type: Number },
         lng: { type: Number },
@@ -33,9 +34,14 @@ const complaintSchema = new mongoose.Schema({
     officerNotes: { type: String, default: "" },
     budgetEstimation: { type: String },
     resourceAllocation: { type: String },
-    assignedOfficerName: { type: String },
-    expectedCompletionDate: { type: Date },
-    user: { type: mongoose.Schema.Types.Mixed, ref: 'User' }
+    // Synchronization fields
+    officerId: { type: String },
+    officerName: { type: String },
+    reviewedAt: { type: Date },
+    rejectionReason: { type: String },
+    // Existing fields continue
+    timeline: [{ event: { type: String }, timestamp: { type: Date, default: Date.now } }],
+
 }, { timestamps: true });
 
 complaintSchema.pre('save', function(next) {

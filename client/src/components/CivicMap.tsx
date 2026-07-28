@@ -24,6 +24,7 @@ interface Complaint {
 interface CivicMapProps {
   complaints: Complaint[];
   onMarkerClick?: (c: Complaint) => void;
+  onSelectLocation?: (location: { address: string; lat: number; lng: number }) => void;
 }
 
 /* ─── Constants ─────────────────────────────────────────────── */
@@ -79,7 +80,7 @@ const badgeColor = (sev: string): string => {
 };
 
 /* ─── Main Component ────────────────────────────────────────── */
-const CivicMap: React.FC<CivicMapProps> = ({ complaints, onMarkerClick }) => {
+const CivicMap: React.FC<CivicMapProps> = ({ complaints, onMarkerClick, onSelectLocation }) => {
   const [activeFilter, setActiveFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
@@ -92,7 +93,17 @@ const CivicMap: React.FC<CivicMapProps> = ({ complaints, onMarkerClick }) => {
   const [isListening, setIsListening] = useState(false);
   const [feedIdx, setFeedIdx] = useState(0);
   const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
   const recognitionRef = useRef<any>(null);
+  const zoneOverlayRef = useRef<any>(null);
+
+  /* Clear zone highlight overlay */
+  const clearZoneOverlay = useCallback(() => {
+    if (zoneOverlayRef.current) {
+      zoneOverlayRef.current.setMap(null);
+      zoneOverlayRef.current = null;
+    }
+  }, []);
 
   /* auto-scroll live feed */
   useEffect(() => {
@@ -125,37 +136,178 @@ const CivicMap: React.FC<CivicMapProps> = ({ complaints, onMarkerClick }) => {
   const apiKey = (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
   const mapId = (import.meta as any).env?.VITE_GOOGLE_MAP_ID || 'DEMO_MAP_ID';
 
-  /* geocode search to pan map */
+  /* geocode search to pan map, zoom, place marker, and highlight zone */
   const handleGeoSearch = useCallback(async (query: string) => {
     const q = query.trim();
     if (!q) return;
-    // First try to match a complaint ID or address in the data
-    const matched = complaints.find(
-      c => c.complaintId?.toLowerCase() === q.toLowerCase() ||
-           c.location?.address?.toLowerCase().includes(q.toLowerCase())
-    );
-    if (matched?.location?.lat) {
-      setMapCenter({ lat: matched.location.lat, lng: matched.location.lng });
-      setMapZoom(16);
-      setSelectedComplaint(matched);
-      return;
-    }
-    // Fall back to Geocoding API
-    if (!apiKey) return;
+
     setIsGeoSearching(true);
+    clearZoneOverlay();
+
     try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q)}&key=${apiKey}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.status === 'OK' && json.results[0]) {
-        const loc = json.results[0].geometry.location;
-        setMapCenter({ lat: loc.lat, lng: loc.lng });
-        setMapZoom(14);
+      let geocodeData: { lat: number; lng: number; address: string; boundingbox?: string[]; geojson?: any } | null = null;
+
+      // 1. First try OpenStreetMap Nominatim API (Free, high accuracy for cities/localities like Mira Road, Bhayandar, Nashik)
+      try {
+        const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&polygon_geojson=1&addressdetails=1&limit=1`;
+        const res = await fetch(nominatimUrl, { headers: { 'Accept-Language': 'en' } });
+        if (res.ok) {
+          const results = await res.json();
+          if (results && results.length > 0) {
+            const first = results[0];
+            geocodeData = {
+              lat: parseFloat(first.lat),
+              lng: parseFloat(first.lon),
+              address: first.display_name,
+              boundingbox: first.boundingbox,
+              geojson: first.geojson
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('Nominatim geocode failed, falling back:', err);
       }
-    } catch (e) { /* silent */ } finally {
+
+      // 2. Fallback to Google Geocoding API if Nominatim returns nothing and API key is set
+      if (!geocodeData && apiKey) {
+        try {
+          const googleUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q)}&key=${apiKey}`;
+          const gRes = await fetch(googleUrl);
+          if (gRes.ok) {
+            const gJson = await gRes.json();
+            if (gJson.status === 'OK' && gJson.results[0]) {
+              const result = gJson.results[0];
+              const loc = result.geometry.location;
+              const vp = result.geometry.viewport;
+              geocodeData = {
+                lat: loc.lat,
+                lng: loc.lng,
+                address: result.formatted_address,
+                boundingbox: vp ? [
+                  vp.southwest.lat.toString(),
+                  vp.northeast.lat.toString(),
+                  vp.southwest.lng.toString(),
+                  vp.northeast.lng.toString()
+                ] : undefined
+              };
+            }
+          }
+        } catch (err) {
+          console.warn('Google geocode failed:', err);
+        }
+      }
+
+      // 3. If geocoding succeeded
+      if (geocodeData) {
+        const { lat, lng, address, boundingbox, geojson } = geocodeData;
+        const newCenter = { lat, lng };
+
+        // Update state center and zoom
+        setMapCenter(newCenter);
+        setMapZoom(14);
+
+        // Create marker object for searched location
+        const searchMarker: Complaint = {
+          _id: 'search-result',
+          issueDetected: address.split(',')[0] || q,
+          location: { lat, lng, address },
+          severity: 'Medium',
+          suggestedDepartment: 'Searched Area',
+          status: 'Zone Identified',
+          createdAt: new Date().toISOString()
+        };
+
+        setSelectedComplaint(searchMarker);
+
+        // Notify parent if location callback supplied
+        onSelectLocation?.({ address, lat, lng });
+
+        // Update active Google Maps viewport & fly to location
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.panTo(newCenter);
+
+          const winGoogle = (window as any).google;
+
+          // Fit bounds if bounding box exists
+          if (boundingbox && winGoogle?.maps?.LatLngBounds) {
+            const south = parseFloat(boundingbox[0]);
+            const north = parseFloat(boundingbox[1]);
+            const west = parseFloat(boundingbox[2]);
+            const east = parseFloat(boundingbox[3]);
+
+            const bounds = new winGoogle.maps.LatLngBounds(
+              { lat: south, lng: west },
+              { lat: north, lng: east }
+            );
+            mapInstanceRef.current.fitBounds(bounds);
+          } else {
+            mapInstanceRef.current.setZoom(15);
+          }
+
+          // Draw/highlight area zone polygon or rectangle overlay
+          if (winGoogle?.maps) {
+            if (geojson && (geojson.type === 'Polygon' || geojson.type === 'MultiPolygon')) {
+              let paths: any[] = [];
+              if (geojson.type === 'Polygon') {
+                paths = geojson.coordinates[0].map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+              } else if (geojson.type === 'MultiPolygon') {
+                paths = geojson.coordinates.map((p: number[][][]) =>
+                  p[0].map((c: number[]) => ({ lat: c[1], lng: c[0] }))
+                );
+              }
+              const poly = new winGoogle.maps.Polygon({
+                paths,
+                strokeColor: '#3b82f6',
+                strokeOpacity: 0.85,
+                strokeWeight: 2.5,
+                fillColor: '#3b82f6',
+                fillOpacity: 0.18,
+                map: mapInstanceRef.current
+              });
+              zoneOverlayRef.current = poly;
+            } else if (boundingbox) {
+              const south = parseFloat(boundingbox[0]);
+              const north = parseFloat(boundingbox[1]);
+              const west = parseFloat(boundingbox[2]);
+              const east = parseFloat(boundingbox[3]);
+
+              const rect = new winGoogle.maps.Rectangle({
+                bounds: { north, south, east, west },
+                strokeColor: '#3b82f6',
+                strokeOpacity: 0.85,
+                strokeWeight: 2.5,
+                fillColor: '#3b82f6',
+                fillOpacity: 0.18,
+                map: mapInstanceRef.current
+              });
+              zoneOverlayRef.current = rect;
+            }
+          }
+        }
+        return;
+      }
+
+      // 4. Fallback: match complaint address in local dataset
+      const matched = complaints.find(
+        c => c.complaintId?.toLowerCase() === q.toLowerCase() ||
+             c.location?.address?.toLowerCase().includes(q.toLowerCase())
+      );
+      if (matched?.location?.lat) {
+        const newCenter = { lat: matched.location.lat, lng: matched.location.lng };
+        setMapCenter(newCenter);
+        setMapZoom(16);
+        setSelectedComplaint(matched);
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.panTo(newCenter);
+          mapInstanceRef.current.setZoom(16);
+        }
+      }
+    } catch (e) {
+      console.error('Map search failed:', e);
+    } finally {
       setIsGeoSearching(false);
     }
-  }, [complaints, apiKey]);
+  }, [complaints, apiKey, onSelectLocation, clearZoneOverlay]);
 
   /* voice search */
   const toggleVoice = useCallback(() => {
@@ -210,6 +362,7 @@ const CivicMap: React.FC<CivicMapProps> = ({ complaints, onMarkerClick }) => {
             zoom={mapZoom}
             onCenterChanged={ev => setMapCenter(ev.detail.center)}
             onZoomChanged={ev => setMapZoom(ev.detail.zoom)}
+            onLoad={(map: any) => { mapInstanceRef.current = map; }}
             disableDefaultUI={true}
             mapTypeId={isSatellite ? 'satellite' : 'roadmap'}
             className="w-full h-full"
@@ -233,6 +386,24 @@ const CivicMap: React.FC<CivicMapProps> = ({ complaints, onMarkerClick }) => {
                 </motion.div>
               </AdvancedMarker>
             ))}
+            {selectedComplaint && selectedComplaint._id === 'search-result' && selectedComplaint.location?.lat && (
+              <AdvancedMarker
+                key="search-result"
+                position={{ lat: selectedComplaint.location.lat, lng: selectedComplaint.location.lng }}
+                onClick={() => handleMarker(selectedComplaint as any)}
+              >
+                <motion.div
+                  initial={{ scale: 0, opacity: 0, y: -10 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  transition={{ type: 'spring', bounce: 0.5 }}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer ring-4 ${severityRing(selectedComplaint)} shadow-lg hover:scale-125 transition-transform`}
+                  style={{ background: severityColor(selectedComplaint) }}
+                  title={selectedComplaint.issueDetected}
+                >
+                  <span className="text-[13px]">{severityLabel(selectedComplaint)}</span>
+                </motion.div>
+              </AdvancedMarker>
+            )}
           </Map>
         </APIProvider>
       ) : (
@@ -266,13 +437,30 @@ const CivicMap: React.FC<CivicMapProps> = ({ complaints, onMarkerClick }) => {
             className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground/60 outline-none text-foreground"
           />
           {searchInput && (
-            <button type="button" onClick={() => { setSearchInput(''); setSearch(''); }} className="shrink-0 hover:text-foreground text-muted-foreground transition-colors">
+            <button
+              type="button"
+              onClick={() => {
+                setSearchInput('');
+                setSearch('');
+                clearZoneOverlay();
+                setSelectedComplaint(prev => (prev?._id === 'search-result' ? null : prev));
+              }}
+              className="shrink-0 hover:text-foreground text-muted-foreground transition-colors"
+            >
               <X size={14} />
             </button>
           )}
           <button
             type="button"
-            onClick={() => { setMapCenter(MUMBAI); setMapZoom(12); }}
+            onClick={() => {
+              setMapCenter(MUMBAI);
+              setMapZoom(12);
+              clearZoneOverlay();
+              if (mapInstanceRef.current) {
+                mapInstanceRef.current.panTo(MUMBAI);
+                mapInstanceRef.current.setZoom(12);
+              }
+            }}
             className="shrink-0 p-1 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-primary"
             title="Reset to Mumbai"
           >

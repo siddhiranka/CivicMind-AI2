@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, MapPin, CheckCircle2, AlertTriangle, ShieldCheck, Clock, User, ChevronRight, Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface ComplaintDrawerProps {
   isOpen: boolean;
@@ -9,20 +10,22 @@ interface ComplaintDrawerProps {
 }
 
 const ComplaintDrawer: React.FC<ComplaintDrawerProps> = ({ isOpen, onClose, complaint }) => {
+  const { t } = useTranslation();
+
   if (!complaint) return null;
 
   const steps = [
-    { id: 'Reported', label: 'Reported', icon: <User size={16} />, completed: true },
-    { id: 'AI Reviewed', label: 'AI Reviewed', icon: <ShieldCheck size={16} />, completed: true },
+    { id: 'Reported', label: t('timeline.reported', 'Reported'), icon: <User size={16} />, completed: true },
+    { id: 'AI Reviewed', label: t('timeline.aiReview', 'AI Reviewed'), icon: <ShieldCheck size={16} />, completed: true },
     { 
       id: 'Officer Review', 
-      label: complaint.status === 'Rejected' ? 'Rejected' : complaint.status === 'Needs Manual Inspection' ? 'Manual Inspection Required' : complaint.status === 'Needs More Evidence' ? 'More Evidence Required' : 'Officer Review', 
+      label: complaint.status === 'Rejected' ? t('status.Rejected', 'Rejected') : complaint.status === 'Needs Manual Inspection' ? t('status.Needs Manual Inspection', 'Manual Inspection Required') : complaint.status === 'Needs More Evidence' ? t('status.Needs More Evidence', 'More Evidence Required') : t('timeline.officerAssigned', 'Officer Review'), 
       icon: ['Rejected', 'Needs Manual Inspection', 'Needs More Evidence'].includes(complaint.status) ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />, 
       completed: complaint.status !== 'Pending' 
     },
-    { id: 'Dept Assigned', label: 'Department Assigned', icon: <ChevronRight size={16} />, completed: ['Assigned', 'In Progress', 'Resolved'].includes(complaint.status) },
-    { id: 'In Progress', label: 'In Progress', icon: <Clock size={16} />, completed: ['In Progress', 'Resolved'].includes(complaint.status) },
-    { id: 'Resolved', label: 'Resolved', icon: <Check size={16} />, completed: complaint.status === 'Resolved' }
+    { id: 'Dept Assigned', label: t('issue.assignDepartment', 'Department Assigned'), icon: <ChevronRight size={16} />, completed: ['Assigned', 'In Progress', 'Resolved'].includes(complaint.status) },
+    { id: 'In Progress', label: t('timeline.inProgress', 'In Progress'), icon: <Clock size={16} />, completed: ['In Progress', 'Resolved'].includes(complaint.status) },
+    { id: 'Resolved', label: t('timeline.resolved', 'Resolved'), icon: <Check size={16} />, completed: complaint.status === 'Resolved' }
   ];
 
   return (
@@ -59,7 +62,7 @@ const ComplaintDrawer: React.FC<ComplaintDrawerProps> = ({ isOpen, onClose, comp
                     complaint.status === 'In Progress' ? 'bg-blue-500/10 text-blue-500' :
                     'bg-amber-500/10 text-amber-500'
                   }`}>
-                    {complaint.status}
+                    {String(t(`status.${complaint.status}`, complaint.status))}
                   </span>
                   <span>•</span>
                   <span>{new Date(complaint.createdAt).toLocaleString()}</span>
@@ -78,19 +81,19 @@ const ComplaintDrawer: React.FC<ComplaintDrawerProps> = ({ isOpen, onClose, comp
                 <div className="bg-secondary/30 p-4 border-t border-border flex items-start gap-3">
                   <MapPin size={20} className="text-primary shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-medium">{complaint.location?.address || 'Unknown Location'}</p>
-                    {complaint.evidence?.gpsAvailable && <span className="text-xs text-primary font-semibold tracking-wide">GPS Verified</span>}
+                    <p className="font-medium">{complaint.location?.address || String(t('common.notFound', 'Unknown Location'))}</p>
+                    {complaint.evidence?.gpsAvailable && <span className="text-xs text-primary font-semibold tracking-wide">✓ {String(t('issue.gpsVerified', 'GPS Verified'))}</span>}
                   </div>
                 </div>
               </div>
 
               {/* Resolution Timeline */}
               <div>
-                <h3 className="text-lg font-bold mb-6">Resolution Timeline</h3>
+                <h3 className="text-lg font-bold mb-6">{String(t('issue.timeline', 'Resolution Timeline'))}</h3>
                 <div className="relative pl-4 space-y-6">
                   <div className="absolute top-2 bottom-2 left-[23px] w-0.5 bg-border -z-10" />
                   
-                  {steps.map((step, idx) => (
+                  {steps.map((step) => (
                     <div key={step.id} className="flex items-start gap-4">
                       <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 border-2 mt-0.5
                         ${step.completed ? 'bg-primary border-primary text-primary-foreground' : 'bg-card border-border text-muted-foreground'}
@@ -112,19 +115,19 @@ const ComplaintDrawer: React.FC<ComplaintDrawerProps> = ({ isOpen, onClose, comp
               <div>
                 <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                   <ShieldCheck size={20} className="text-primary" />
-                  AI Evidence Assessment
+                  {String(t('report.assessmentTitle', 'AI Evidence Assessment'))}
                 </h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div className="p-4 bg-secondary/30 border border-border rounded-xl">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">Severity</span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">{String(t('report.severity', 'Severity'))}</span>
                     <span className={`text-lg font-bold ${
                       complaint.severity === 'Critical' ? 'text-destructive' :
                       complaint.severity === 'High' ? 'text-amber-500' : 'text-foreground'
-                    }`}>{complaint.severity}</span>
+                    }`}>{String(t(`severity.${complaint.severity}`, complaint.severity))}</span>
                   </div>
                   <div className="p-4 bg-secondary/30 border border-border rounded-xl">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">Confidence</span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-1">{t('home.confidence', 'Confidence')}</span>
                     <div className="flex items-center gap-2">
                       <div className="h-2 flex-1 bg-background rounded-full overflow-hidden">
                         <div className="h-full bg-primary" style={{ width: `${complaint.evidence?.overallStrength || 0}%` }} />
@@ -136,14 +139,14 @@ const ComplaintDrawer: React.FC<ComplaintDrawerProps> = ({ isOpen, onClose, comp
 
                 <div className="space-y-3">
                   <div className="p-4 bg-secondary/30 border border-border rounded-xl">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-2">Scene Analysis</span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-2">{t('report.sceneAnalysis', 'Scene Analysis')}</span>
                     <p className="text-sm leading-relaxed">{complaint.evidence?.sceneAnalysis || "Analysis unavailable."}</p>
                   </div>
                   
                   <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
                     <div className="flex items-center gap-2 mb-2 text-amber-600 dark:text-amber-400">
                       <AlertTriangle size={16} />
-                      <span className="text-xs uppercase tracking-wider font-semibold">AI Limitations</span>
+                      <span className="text-xs uppercase tracking-wider font-semibold">{t('report.limitations', 'AI Limitations')}</span>
                     </div>
                     <p className="text-sm leading-relaxed text-amber-700 dark:text-amber-300">
                       {complaint.evidence?.limitations || "Visual assessment only. Exact conditions may vary. Human verification required before dispatch."}
@@ -151,7 +154,7 @@ const ComplaintDrawer: React.FC<ComplaintDrawerProps> = ({ isOpen, onClose, comp
                   </div>
 
                   <div className="p-4 bg-secondary/30 border border-border rounded-xl">
-                     <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-2">AI Reasoning</span>
+                     <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block mb-2">{t('dashboard.aiReasoning', 'AI Reasoning')}</span>
                      <ul className="text-sm space-y-2">
                        {complaint.evidence?.reasoning?.map((r: string, i: number) => (
                          <li key={i} className="flex items-start gap-2 text-muted-foreground">
@@ -166,8 +169,8 @@ const ComplaintDrawer: React.FC<ComplaintDrawerProps> = ({ isOpen, onClose, comp
               
               {/* Citizen Description */}
               <div>
-                <h3 className="text-lg font-bold mb-3">Citizen Report</h3>
-                <p className="text-muted-foreground bg-secondary/30 p-4 rounded-xl italic">"{complaint.originalDescription}"</p>
+                <h3 className="text-lg font-bold mb-3">{t('report.descLabel', 'Citizen Report')}</h3>
+                <p className="text-muted-foreground bg-secondary/30 p-4 rounded-xl italic">"{complaint.originalDescription || complaint.issueDetected}"</p>
               </div>
 
             </div>

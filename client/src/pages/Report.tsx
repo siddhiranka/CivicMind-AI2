@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, ChevronRight, AlertTriangle, Activity, MapPin, Search, Check, FileText, BrainCircuit, ScanSearch, Gavel, Sparkles, ShieldCheck, Zap, HelpCircle, Eye, Flame, BarChart2, AlertCircle, Building2, ListChecks, Users, Info, CheckCircle2, ShieldAlert, Lightbulb, FileSearch, Compass } from 'lucide-react';
+import { Upload, ChevronRight, AlertTriangle, Activity, MapPin, Search, Check, FileText, BrainCircuit, ScanSearch, Gavel, Sparkles, ShieldCheck, Zap, HelpCircle, Eye, Flame, BarChart2, AlertCircle, Building2, ListChecks, Users, Info, CheckCircle2, ShieldAlert, Lightbulb, FileSearch, Compass, XCircle, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -17,9 +17,11 @@ const Report = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [checkingGps, setCheckingGps] = useState(false);
   const [aiStep, setAiStep] = useState(0);
+  const [rejectionData, setRejectionData] = useState<any>(null);
   const [aiResult, setAiResult] = useState<any>(null);
   const [complaintId, setComplaintId] = useState<string>('');
   const [gpsDetails, setGpsDetails] = useState<{lat: number, lng: number, accuracy: number, address: string} | null>(null);
+  const [gpsStatus, setGpsStatus] = useState<'verified' | 'denied' | 'none'>('none');
   const [isDetectingGps, setIsDetectingGps] = useState(false);
 
   const navigate = useNavigate();
@@ -40,6 +42,7 @@ const Report = () => {
 
   const handleDetectGps = () => {
     if (!("geolocation" in navigator)) {
+      setGpsStatus('none');
       toast.error("GPS Not Supported", { description: "Your browser does not support Geolocation." });
       return;
     }
@@ -67,21 +70,24 @@ const Report = () => {
         }
 
         setGpsDetails({ lat, lng, accuracy, address: reverseAddress });
+        setGpsStatus('verified');
         setLocationStr(prev => prev ? `${prev} (GPS Verified)` : reverseAddress);
         setIsDetectingGps(false);
         toast.success("GPS Verified!", { description: `Coordinates: ${lat.toFixed(4)}, ${lng.toFixed(4)} (±${accuracy}m)` });
       },
       (error) => {
         setIsDetectingGps(false);
-        toast.error("GPS Detection Failed", { description: "Please enable location services or type your address manually." });
+        setGpsStatus('denied');
+        setGpsDetails(null);
+        toast.error("GPS Permission Denied", { description: "Location permission denied. Location could not be verified." });
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
-  const requestLocation = (): Promise<{lat: number, lng: number, hasGps: boolean}> => {
-    if (gpsDetails) {
-      return Promise.resolve({ lat: gpsDetails.lat, lng: gpsDetails.lng, hasGps: true });
+  const requestLocation = async (): Promise<{lat: number | null, lng: number | null, hasGps: boolean}> => {
+    if (gpsDetails && gpsStatus === 'verified') {
+      return { lat: gpsDetails.lat, lng: gpsDetails.lng, hasGps: true };
     }
     return new Promise((resolve) => {
       setCheckingGps(true);
@@ -89,26 +95,30 @@ const Report = () => {
         navigator.geolocation.getCurrentPosition(
           (position) => {
             const loc = { lat: position.coords.latitude, lng: position.coords.longitude, hasGps: true };
+            setGpsDetails({ lat: position.coords.latitude, lng: position.coords.longitude, accuracy: 20, address: locationStr || 'Live Location' });
+            setGpsStatus('verified');
             setCheckingGps(false);
             resolve(loc);
           },
           (error) => {
-            const loc = { lat: 0, lng: 0, hasGps: false };
+            setGpsStatus('denied');
+            setGpsDetails(null);
             setCheckingGps(false);
-            resolve(loc);
+            resolve({ lat: null, lng: null, hasGps: false });
           },
           { timeout: 5000 }
         );
       } else {
-        const loc = { lat: 0, lng: 0, hasGps: false };
+        setGpsStatus('none');
+        setGpsDetails(null);
         setCheckingGps(false);
-        resolve(loc);
       }
     });
-  }
+  };
 
   const handleAnalyze = async () => {
     if (!file || !description || !locationStr) return;
+    setRejectionData(null);
     
     setIsAnalyzing(true);
     setAiStep(0);
@@ -125,7 +135,7 @@ const Report = () => {
     formData.append('image', file);
     formData.append('hasGps', loc.hasGps ? 'true' : 'false');
     formData.append('language', i18n.language);
-    if (loc.hasGps) {
+    if (loc.hasGps && loc.lat !== null && loc.lng !== null) {
       formData.append('lat', loc.lat.toString());
       formData.append('lng', loc.lng.toString());
     }
@@ -151,41 +161,46 @@ const Report = () => {
       }
       
       if (!response.ok) {
+        // Handle the new rejection case specifically
+        if (response.status === 400 && data.isCivicIssue === false) {
+          setRejectionData(data);
+          clearInterval(steps);
+          setAiStep(2); // Stop at "Civic Issue Check"
+          setStep(4); // Go to results page to show rejection
+          return;
+        }
         throw new Error(data.error || 'Failed to process complaint');
       }
 
-      setAiResult(data.aiAnalysis);
-      if (data.complaint) {
-         setComplaintId(data.complaint.complaintId);
-      }
-
-      window.dispatchEvent(new CustomEvent('complaint-submitted', { detail: data.complaint }));
-      
-      clearInterval(steps);
-      setAiStep(4);
-      
-      setTimeout(() => {
+        setAiResult(data.aiAnalysis);
+        if (data.complaint) {
+          setComplaintId(data.complaint.complaintId);
+        }
+        window.dispatchEvent(new CustomEvent('complaint-submitted', { detail: data.complaint }));
+        clearInterval(steps);
+        setAiStep(4);
+        // Immediately move to the report step and stop analyzing
         setStep(4);
         setIsAnalyzing(false);
-        toast.success(t('toast.analysisComplete', 'Analysis Complete'), { description: t('toast.analysisCompleteDesc', 'The AI has finished reviewing your report.') });
-      }, 1000);
+        toast.success(t('toast.analysisComplete', 'Analysis Complete'), { description: t('toast.analysisCompleteDesc', 'The AI has finished reviewing your report.') });;
     } catch (err: any) {
       console.error(err);
       toast.error(t('toast.error', 'AI Processing Failed'), { description: err.message || 'An error occurred.' });
       clearInterval(steps);
+    } finally {
       setIsAnalyzing(false);
     }
   };
 
   const agentSteps = [
-    { icon: <Upload size={18} />, text: 'Loading Evidence' },
-    { icon: <ScanSearch size={18} />, text: 'Detecting Objects' },
-    { icon: <FileSearch size={18} />, text: 'Reading Visible Text' },
-    { icon: <BrainCircuit size={18} />, text: 'Understanding Scene' },
-    { icon: <Search size={18} />, text: 'Comparing Description' },
-    { icon: <AlertTriangle size={18} />, text: 'Assessing Severity' },
-    { icon: <MapPin size={18} />, text: 'Checking Location Evidence' },
-    { icon: <Sparkles size={18} />, text: 'Generating Recommendation' }
+    { icon: <Upload size={18} />, text: 'Identifying Image' },
+    { icon: <ScanSearch size={18} />, text: 'Detecting Content' },
+    { icon: <ShieldCheck size={18} />, text: 'Civic Issue Check' },
+    { icon: <FileSearch size={18} />, text: 'Reading Visible Text (OCR)' },
+    { icon: <BrainCircuit size={18} />, text: 'Matching Description' },
+    { icon: <AlertTriangle size={18} />, text: 'Assessing Severity & Priority' },
+    { icon: <MapPin size={18} />, text: 'Verifying Location Evidence' },
+    { icon: <Sparkles size={18} />, text: 'Compiling Final Report' }
   ];
 
   return (
@@ -424,13 +439,14 @@ const Report = () => {
                                      key={idx}
                                      initial={{ opacity: 0, x: -10 }}
                                      animate={{ opacity: aiStep >= idx ? 1 : 0.3, x: aiStep >= idx ? 0 : -10 }}
-                                     className={`flex items-center gap-3 p-2 rounded-xl border transition-all ${aiStep === idx ? 'bg-primary/10 border-primary/30 text-primary font-bold' : 'border-transparent text-foreground'}`}
+                                     className={`flex items-center gap-3 p-2 rounded-xl border transition-all ${aiStep === idx ? 'bg-primary/10 border-primary/30 text-primary font-bold' : 'border-transparent text-foreground'} ${rejectionData && idx === 2 ? 'bg-destructive/10 border-destructive/30 text-destructive font-bold' : ''}`}
                                    >
-                                     <div className={`p-1.5 rounded-lg ${aiStep === idx ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'}`}>
+                                     <div className={`p-1.5 rounded-lg ${aiStep === idx ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'} ${rejectionData && idx === 2 ? 'bg-destructive text-destructive-foreground' : ''}`}>
                                        {agent.icon}
                                      </div>
                                      <div className="flex-1 text-xs font-semibold">{agent.text}</div>
-                                     {aiStep > idx && <Check size={14} className="text-emerald-400 shrink-0" />}
+                                     {rejectionData && idx === 2 && <XCircle size={14} className="text-destructive shrink-0" />}
+                                     {aiStep > idx && !(rejectionData && idx >= 2) && <Check size={14} className="text-emerald-400 shrink-0" />}
                                      {aiStep === idx && <Activity size={14} className="text-primary animate-spin shrink-0" />}
                                    </motion.div>
                                  ))}
@@ -475,329 +491,178 @@ const Report = () => {
                 </motion.div>
               )}
 
-              {/* STEP 4: Comprehensive Explainable AI Vision Report */}
-              {step === 4 && aiResult && (
+              {/* STEP 4: Simplified Clean AI Verification Report */}
+              {step === 4 && (aiResult || rejectionData) && (
                 <motion.div
                   key="step4"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="space-y-4 overflow-y-auto flex-1 pr-1"
+                  className="space-y-4 flex-1 pr-1"
                 >
-                  {!aiResult.isGenuine ? (
-                    <div className="text-center py-8">
-                      <div className="w-20 h-20 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6 border border-amber-500/20">
-                        <AlertTriangle size={40} />
+                  {rejectionData ? (
+                    /* REJECTED REPORT CARD */
+                    <div className="bg-card border border-destructive/30 rounded-3xl p-6 sm:p-8 text-center max-w-xl mx-auto space-y-6 shadow-2xl">
+                      <div className="w-16 h-16 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto border border-destructive/20">
+                        <XCircle size={36} />
                       </div>
-                      <h2 className="text-2xl sm:text-3xl font-extrabold mb-3">{t('report.unclearTitle', 'Evidence Unclear')}</h2>
-                      <p className="text-muted-foreground text-base mb-6 max-w-lg mx-auto leading-relaxed">
-                        {aiResult.evidenceAssessment?.limitations || aiResult.locationEvidence?.evidenceStatement || t('report.unclearSub', 'The AI could not clearly identify the issue from the provided image. Please upload a clearer photo.')}
-                      </p>
-                      <button
-                        onClick={() => { setStep(3); setFile(null); setPreview(null); }}
-                        className="px-8 py-4 bg-primary text-primary-foreground rounded-2xl font-bold shadow-lg hover:bg-primary/90 transition-all active:scale-95"
-                      >
-                        {t('report.reuploadBtn', 'Upload Clearer Image')}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-
-                      {/* ── 1. VERIFIED HEADER ── */}
-                      <div className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
-                        <div className="w-10 h-10 bg-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center shrink-0">
-                          <CheckCircle2 size={20} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-extrabold text-emerald-400 text-sm">Gemini Vision — Report Processed</p>
-                          {complaintId && <p className="text-[11px] text-muted-foreground mt-0.5">Complaint ID: <span className="font-bold text-foreground">{complaintId}</span></p>}
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-2xl font-black text-emerald-400">{aiResult.scoreBreakdown?.overallConfidence || aiResult.evidenceAssessment?.confidence || aiResult.priorityScore || 85}%</p>
-                          <p className="text-[10px] text-muted-foreground">Confidence</p>
-                        </div>
-                      </div>
-
-                      {/* ── DUPLICATE EVIDENCE ALERT ── */}
-                      {aiResult.duplicateDetected && (
-                        <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-start gap-3">
-                          <AlertTriangle size={20} className="text-amber-400 shrink-0 mt-0.5" />
-                          <div>
-                            <h4 className="text-xs font-extrabold uppercase tracking-wider text-amber-400">Duplicate Evidence Notice</h4>
-                            <p className="text-xs text-amber-200/90 mt-1 leading-relaxed">
-                              This image appears visually similar to a previously submitted report ({aiResult.duplicateInfo?.complaintId}). Please verify whether this is a duplicate submission.
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* ── MULTI-FACTOR SCORE BREAKDOWN ── */}
-                      {aiResult.scoreBreakdown && (
-                        <div className="p-4 bg-primary/5 border border-primary/20 rounded-2xl space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Sparkles size={16} className="text-primary shrink-0" />
-                              <span className="text-[11px] font-extrabold uppercase tracking-widest text-primary">Multi-Factor Verification Score Breakdown</span>
-                            </div>
-                            <span className="text-lg font-black text-primary">{aiResult.scoreBreakdown.overallConfidence}%</span>
-                          </div>
-                          
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center pt-1">
-                            <div className="p-2.5 bg-background/80 rounded-xl border border-border">
-                              <span className="text-[10px] text-muted-foreground uppercase font-extrabold block">Issue Detection</span>
-                              <span className="text-sm font-black text-emerald-400">{aiResult.scoreBreakdown.issueDetectionScore}%</span>
-                            </div>
-                            <div className="p-2.5 bg-background/80 rounded-xl border border-border">
-                              <span className="text-[10px] text-muted-foreground uppercase font-extrabold block">Description Match</span>
-                              <span className="text-sm font-black text-blue-400">{aiResult.scoreBreakdown.descriptionMatchScore}%</span>
-                            </div>
-                            <div className="p-2.5 bg-background/80 rounded-xl border border-border">
-                              <span className="text-[10px] text-muted-foreground uppercase font-extrabold block">Location Verification</span>
-                              <span className={`text-sm font-black ${aiResult.scoreBreakdown.locationVerificationScore > 70 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                                {aiResult.scoreBreakdown.locationVerificationScore}%
-                              </span>
-                            </div>
-                            <div className="p-2.5 bg-background/80 rounded-xl border border-border">
-                              <span className="text-[10px] text-muted-foreground uppercase font-extrabold block">Image Quality</span>
-                              <span className="text-sm font-black text-purple-400">{aiResult.scoreBreakdown.imageQualityScore}%</span>
-                            </div>
-                          </div>
-
-                          {aiResult.scoreBreakdown.reasoningExplanation && (
-                            <p className="text-xs text-muted-foreground leading-relaxed pt-1.5 border-t border-border/40 font-medium">
-                              <strong className="text-foreground">AI Score Reasoning: </strong>
-                              {aiResult.scoreBreakdown.reasoningExplanation}
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {/* ── 2. SCENE SUMMARY ── */}
-                      <div className="p-4 bg-secondary/20 border border-border rounded-2xl">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Eye size={15} className="text-primary shrink-0" />
-                          <span className="text-[11px] font-extrabold uppercase tracking-widest text-muted-foreground">Scene Summary</span>
-                        </div>
-                        <p className="text-sm leading-relaxed text-foreground font-medium">
-                          {aiResult.sceneDescription || aiResult.evidenceAssessment?.sceneAnalysis || 'Gemini analyzed the submitted evidence in detail.'}
+                      
+                      <div>
+                        <h2 className="text-2xl font-black text-destructive flex items-center justify-center gap-2">
+                          ❌ Submission Rejected
+                        </h2>
+                        <p className="text-xs text-muted-foreground mt-1 font-semibold">
+                          No public safety or civic infrastructure hazard found.
                         </p>
                       </div>
 
-                      {/* ── 3. OBJECTS DETECTED & OCR TEXT ── */}
-                      <div className="p-4 bg-secondary/20 border border-border rounded-2xl space-y-3">
-                        <div className="flex items-center gap-2">
-                          <ScanSearch size={15} className="text-primary shrink-0" />
-                          <span className="text-[11px] font-extrabold uppercase tracking-widest text-muted-foreground">Objects Detected & OCR Text</span>
+                      <div className="bg-secondary/40 border border-border rounded-2xl p-4 text-left space-y-3">
+                        <div>
+                          <span className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground block">Detected Content</span>
+                          <p className="font-extrabold text-foreground text-sm mt-0.5">{rejectionData.detectedContent || 'Non-civic / Promotional Content'}</p>
                         </div>
                         
-                        {/* Detected Objects Pills */}
-                        <div className="space-y-1.5">
-                          <span className="text-[10px] font-bold text-muted-foreground block">Visible Objects:</span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {(aiResult.objectDetection?.detectedObjects || aiResult.detectedObjects || []).map((obj: string, i: number) => (
-                              <span key={i} className="px-2.5 py-1 bg-primary/10 border border-primary/20 text-primary rounded-lg text-xs font-semibold">{obj}</span>
-                            ))}
-                          </div>
+                        <div>
+                          <span className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground block">Reason</span>
+                          <p className="text-sm font-semibold text-destructive mt-0.5">{rejectionData.error || 'This image does not contain a civic issue.'}</p>
                         </div>
 
-                        {/* OCR Text / Vehicle Plate */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                          <div className="p-2.5 bg-background border border-border rounded-xl">
-                            <span className="text-[10px] font-bold text-muted-foreground block mb-1">Visible Text (OCR):</span>
-                            {(aiResult.objectDetection?.extractedText?.length > 0) ? (
-                              <div className="flex flex-wrap gap-1">
-                                {aiResult.objectDetection.extractedText.map((t: string, i: number) => (
-                                  <span key={i} className="px-2 py-0.5 bg-secondary text-foreground text-xs rounded border border-border">{t}</span>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-xs text-muted-foreground italic">No street signboards or text detected</p>
+                        <div>
+                          <span className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground block">Suggestion</span>
+                          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                            Please upload an original image or video showing a real civic infrastructure problem.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-center gap-3 pt-2">
+                        <button
+                          onClick={() => { setStep(1); setFile(null); setPreview(null); setRejectionData(null); setDescription(''); setLocationStr(''); }}
+                          className="px-5 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-extrabold shadow-lg hover:bg-primary/90 transition-all flex items-center gap-2 active:scale-95"
+                        >
+                          <RefreshCw size={15} /> Try Again
+                        </button>
+                        <button
+                          onClick={() => { setStep(3); setFile(null); setPreview(null); setRejectionData(null); }}
+                          className="px-5 py-3 bg-secondary text-secondary-foreground rounded-xl text-xs font-extrabold shadow-lg hover:bg-secondary/80 transition-all active:scale-95"
+                        >
+                          Upload Another Image
+                        </button>
+                      </div>
+                    </div>
+                  ) : aiResult && (
+                    /* VERIFIED CLEAN SINGLE-SCREEN REPORT CARD */
+                    <div className="space-y-4 max-w-xl mx-auto">
+
+                      {/* Header Status & Complaint ID */}
+                      <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-between shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center shrink-0 border border-emerald-500/30">
+                            <CheckCircle2 size={22} />
+                          </div>
+                          <div>
+                            <h3 className="font-black text-emerald-400 text-sm sm:text-base flex items-center gap-1.5">
+                              ✅ AI Verification Status: Verified
+                            </h3>
+                            {complaintId && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Complaint ID: <span className="font-extrabold text-foreground">{complaintId}</span>
+                              </p>
                             )}
                           </div>
-                          <div className="p-2.5 bg-background border border-border rounded-xl">
-                            <span className="text-[10px] font-bold text-muted-foreground block mb-1">Vehicle Plate:</span>
-                            <p className="text-xs font-semibold text-foreground">
-                              {aiResult.objectDetection?.vehiclePlate || 'None visible / Unclear'}
+                        </div>
+                        
+                        <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-xs font-extrabold uppercase tracking-wider">
+                          Verified
+                        </span>
+                      </div>
+
+                      {/* Main Result Card */}
+                      <div className="p-5 sm:p-6 bg-card border border-border rounded-3xl space-y-4 shadow-xl">
+                        
+                        {/* Detected Issue */}
+                        <div className="border-b border-border/50 pb-3">
+                          <span className="text-[11px] font-extrabold uppercase tracking-widest text-primary block mb-1">Detected Issue</span>
+                          <h2 className="text-xl sm:text-2xl font-black text-foreground">
+                            {aiResult.issueDetected || aiResult.issueIdentification?.issue || aiResult.sceneDescription?.split('.')[0] || 'Civic Infrastructure Hazard'}
+                          </h2>
+                        </div>
+
+                        {/* AI Observation */}
+                        <div className="bg-secondary/30 border border-border/60 rounded-2xl p-4 space-y-1">
+                          <span className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground block">AI Observation</span>
+                          <p className="text-xs sm:text-sm font-medium leading-relaxed text-foreground/90">
+                            {aiResult.sceneDescription || aiResult.enhancedDescription || 'Gemini detected a verified civic issue in the uploaded media.'}
+                          </p>
+                        </div>
+
+                        {/* Metrics Grid: Department, Priority, Confidence */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          
+                          {/* Assigned Department */}
+                          <div className="p-3.5 bg-secondary/30 border border-border/60 rounded-2xl">
+                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground block mb-1">Assigned Department</span>
+                            <p className="text-xs sm:text-sm font-extrabold text-primary truncate">
+                              {aiResult.recommendedDepartment?.name || aiResult.suggestedDepartment || 'Road Maintenance'}
                             </p>
                           </div>
-                        </div>
 
-                        {aiResult.objectDetection?.ocrNotes && (
-                          <p className="text-[11px] text-muted-foreground leading-relaxed pt-1">
-                            {aiResult.objectDetection.ocrNotes}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* ── 4. LOCATION EVIDENCE ── */}
-                      <div className="p-4 bg-secondary/20 border border-border rounded-2xl space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <MapPin size={15} className="text-primary shrink-0" />
-                            <span className="text-[11px] font-extrabold uppercase tracking-widest text-muted-foreground">Location Evidence</span>
-                          </div>
-                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
-                            aiResult.locationEvidence?.locationVerified ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                            : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                          }`}>
-                            {aiResult.locationEvidence?.status || (aiResult.locationEvidence?.locationVerified ? '✓ Location Supported' : '⚠ No visible landmark evidence')}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          {aiResult.locationEvidence?.evidenceStatement || "The submitted image does not contain sufficient visual evidence (such as signboards, landmarks, or GPS metadata) to verify the claimed location. Please upload a photo that includes nearby landmarks or enable GPS while reporting."}
-                        </p>
-                      </div>
-
-                      {/* ── 5. DESCRIPTION MATCH ── */}
-                      {aiResult.descriptionMatch && (
-                        <div className="p-4 bg-secondary/20 border border-border rounded-2xl space-y-2">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              <FileSearch size={15} className="text-primary shrink-0" />
-                              <span className="text-[11px] font-extrabold uppercase tracking-widest text-muted-foreground">Description Match</span>
-                            </div>
-                            <span className="text-sm font-extrabold text-primary">{aiResult.descriptionMatch.matchPercentage || 80}% Match</span>
-                          </div>
-                          <div className="h-1.5 bg-background rounded-full overflow-hidden mb-2">
-                            <div className="h-full bg-primary rounded-full" style={{ width: `${aiResult.descriptionMatch.matchPercentage || 80}%` }} />
-                          </div>
-                          <p className="text-xs font-semibold text-foreground">{aiResult.descriptionMatch.summary}</p>
-                          {aiResult.descriptionMatch.discrepancy && (
-                            <p className="text-xs text-amber-400/90">{aiResult.descriptionMatch.discrepancy}</p>
-                          )}
-                          <p className="text-[11px] text-muted-foreground leading-relaxed">{aiResult.descriptionMatch.reason}</p>
-                        </div>
-                      )}
-
-                      {/* ── 6. EVIDENCE ASSESSMENT MATRIX ── */}
-                      {aiResult.evidenceAssessment && (
-                        <div className="p-4 bg-secondary/20 border border-border rounded-2xl space-y-3">
-                          <div className="flex items-center gap-2 mb-1">
-                            <ShieldCheck size={15} className="text-primary shrink-0" />
-                            <span className="text-[11px] font-extrabold uppercase tracking-widest text-muted-foreground">Evidence Assessment Matrix</span>
-                          </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                            <div className="p-2 bg-background border border-border rounded-xl text-center">
-                              <span className="text-[9px] font-bold text-muted-foreground uppercase block">Scene Match</span>
-                              <span className="text-xs font-bold text-foreground">{aiResult.evidenceAssessment.sceneMatchesComplaint || 'Yes'}</span>
-                            </div>
-                            <div className="p-2 bg-background border border-border rounded-xl text-center">
-                              <span className="text-[9px] font-bold text-muted-foreground uppercase block">Location Evidence</span>
-                              <span className="text-xs font-bold text-amber-400">{aiResult.evidenceAssessment.locationEvidenceLevel || 'Insufficient'}</span>
-                            </div>
-                            <div className="p-2 bg-background border border-border rounded-xl text-center">
-                              <span className="text-[9px] font-bold text-muted-foreground uppercase block">GPS Provided</span>
-                              <span className="text-xs font-bold text-foreground">{aiResult.evidenceAssessment.gpsAvailable || 'No'}</span>
-                            </div>
-                            <div className="p-2 bg-background border border-border rounded-xl text-center">
-                              <span className="text-[9px] font-bold text-muted-foreground uppercase block">Landmark</span>
-                              <span className="text-xs font-bold text-foreground">{aiResult.evidenceAssessment.visibleLandmark || 'None'}</span>
-                            </div>
-                            <div className="p-2 bg-background border border-border rounded-xl text-center">
-                              <span className="text-[9px] font-bold text-muted-foreground uppercase block">Image Quality</span>
-                              <span className="text-xs font-bold text-emerald-400">{aiResult.evidenceAssessment.imageQuality || 'Good'}</span>
-                            </div>
-                            <div className="p-2 bg-background border border-border rounded-xl text-center">
-                              <span className="text-[9px] font-bold text-muted-foreground uppercase block">Overall Evidence</span>
-                              <span className="text-xs font-bold text-primary">{aiResult.evidenceAssessment.overallEvidence || 'Moderate'}</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* ── 7. OFFICER RECOMMENDATION & EVIDENCE STRENGTH ── */}
-                      {aiResult.fraudDetection && (
-                        <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <ShieldAlert size={15} className="text-amber-400 shrink-0" />
-                              <span className="text-[11px] font-extrabold uppercase tracking-widest text-amber-400">Officer Recommendation & Evidence Strength</span>
-                            </div>
-                            <span className="px-2.5 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-full text-xs font-bold">
-                              {aiResult.fraudDetection.recommendation || 'Human Review Recommended'}
+                          {/* Priority */}
+                          <div className="p-3.5 bg-secondary/30 border border-border/60 rounded-2xl">
+                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground block mb-1">Priority</span>
+                            <span className={`inline-block text-xs font-extrabold px-2.5 py-0.5 rounded-lg border ${
+                              (aiResult.estimatedPriority || aiResult.severity) === 'Critical' || (aiResult.estimatedPriority || aiResult.severity) === 'High'
+                                ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            }`}>
+                              {aiResult.estimatedPriority || aiResult.severity || 'Medium'}
                             </span>
                           </div>
-                          
-                          {aiResult.fraudDetection.warningSigns?.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 pt-1">
-                              {aiResult.fraudDetection.warningSigns.map((sign: string, i: number) => (
-                                <span key={i} className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] font-medium rounded-lg flex items-center gap-1">
-                                  <AlertCircle size={10} /> {sign}
-                                </span>
-                              ))}
+
+                          {/* Confidence */}
+                          <div className="p-3.5 bg-secondary/30 border border-border/60 rounded-2xl">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Confidence</span>
+                              <span className="text-xs font-black text-emerald-400">
+                                {aiResult.scoreBreakdown?.overallConfidence || aiResult.evidenceAssessment?.confidence || aiResult.priorityScore || 92}%
+                              </span>
                             </div>
-                          )}
+                            <div className="h-2 bg-background rounded-full overflow-hidden border border-border/40">
+                              <div
+                                className="h-full bg-emerald-400 rounded-full transition-all duration-500"
+                                style={{ width: `${aiResult.scoreBreakdown?.overallConfidence || aiResult.evidenceAssessment?.confidence || aiResult.priorityScore || 92}%` }}
+                              />
+                            </div>
+                          </div>
 
-                          <p className="text-xs text-amber-300/80 leading-relaxed pt-1">
-                            {aiResult.fraudDetection.recommendationReason || 'Insufficient evidence to verify authenticity due to lack of visible landmarks or embedded metadata.'}
-                          </p>
                         </div>
-                      )}
 
-                      {/* ── 8. RECOMMENDED DEPARTMENT & PRIORITY ── */}
-                      <div className="p-4 bg-primary/5 border border-primary/20 rounded-2xl flex items-start gap-3">
-                        <Building2 size={18} className="text-primary shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                          <span className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground block mb-0.5">Assigned Department</span>
-                          <p className="font-extrabold text-primary text-sm">
-                            {aiResult.recommendedDepartment?.name || aiResult.suggestedDepartment || 'Road Maintenance'}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">{aiResult.recommendedDepartment?.reason || aiResult.risk}</p>
+                        {/* Location Verification Status */}
+                        <div className="p-3 bg-secondary/20 border border-border/50 rounded-xl flex items-center justify-between text-xs">
+                          <span className="font-bold text-muted-foreground">Location Verification:</span>
+                          <span className={`font-extrabold flex items-center gap-1 ${
+                            gpsStatus === 'verified' && (gpsDetails || aiResult.locationEvidence?.locationVerified)
+                              ? 'text-emerald-400'
+                              : gpsStatus === 'denied'
+                              ? 'text-amber-400'
+                              : 'text-muted-foreground'
+                          }`}>
+                            {gpsStatus === 'verified' && (gpsDetails || aiResult.locationEvidence?.locationVerified)
+                              ? '✅ GPS Verified'
+                              : gpsStatus === 'denied'
+                              ? '⚠ GPS Permission Denied'
+                              : '⚠ GPS Not Available'}
+                          </span>
                         </div>
-                        <div className="text-right shrink-0">
-                          <span className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground block mb-0.5">Priority</span>
-                          <span className="font-extrabold text-sm text-foreground">{aiResult.estimatedPriority || 'Normal'}</span>
-                        </div>
+
                       </div>
 
-                      {/* ── 9. AI LIMITATIONS ── */}
-                      <div className="p-4 bg-secondary/10 border border-border/40 rounded-2xl space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Info size={14} className="text-muted-foreground shrink-0" />
-                          <span className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">AI Limitations Disclaimer</span>
-                        </div>
-                        <ul className="space-y-1.5">
-                          {(aiResult.aiLimitations || [
-                            "The AI cannot determine whether an image was downloaded from the internet from visual content alone.",
-                            "The AI cannot guarantee the exact location unless supported by GPS metadata or identifiable landmarks.",
-                            "Final verification should be performed by a government officer."
-                          ]).map((lim: string, i: number) => (
-                            <li key={i} className="flex items-start gap-2 text-[11px] text-muted-foreground">
-                              <span className="w-1 h-1 rounded-full bg-muted-foreground/40 mt-1.5 shrink-0" />
-                              {lim}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      {/* ── 10. CITIZEN GUIDANCE (TIPS TO IMPROVE SUBMISSION) ── */}
-                      <div className="p-4 bg-primary/5 border border-primary/20 rounded-2xl space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Lightbulb size={15} className="text-primary shrink-0" />
-                          <span className="text-[11px] font-extrabold uppercase tracking-widest text-primary">To Improve Future Report Verification</span>
-                        </div>
-                        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
-                          {(aiResult.userGuidance || [
-                            "Enable GPS while submitting report.",
-                            "Capture nearby signboards, street names, or prominent landmarks.",
-                            "Avoid uploading screenshots or photos of secondary screens.",
-                            "Upload clear, high-resolution original photos taken in daylight.",
-                            "Ensure the civic issue and surrounding area are clearly visible."
-                          ]).map((tip: string, i: number) => (
-                            <li key={i} className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                              <Check size={12} className="text-primary shrink-0" />
-                              <span>{tip}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      {/* ── CTA BUTTON ── */}
-                      <div className="pt-2 pb-2">
+                      {/* CTA Button */}
+                      <div className="pt-1">
                         <button
                           onClick={() => navigate('/dashboard')}
-                          className="w-full py-4 bg-primary text-primary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-all shadow-xl shadow-primary/25 active:scale-95"
+                          className="w-full py-4 bg-primary text-primary-foreground rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 hover:bg-primary/90 transition-all shadow-xl shadow-primary/25 active:scale-95"
                         >
-                          Track Complaint Status
+                          Track Complaint Status <ChevronRight size={18} />
                         </button>
                       </div>
 
