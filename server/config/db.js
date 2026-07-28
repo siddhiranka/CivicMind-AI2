@@ -13,7 +13,12 @@ try {
 
 const connectDB = async () => {
     try {
-        const conn = await mongoose.connect(process.env.MONGO_URI, {
+        const uri = process.env.MONGO_URI;
+        if (!uri || typeof uri !== 'string' || !uri.trim()) {
+            console.warn('⚠️ MONGO_URI is not set. Server running in resilient mode.');
+            return;
+        }
+        const conn = await mongoose.connect(uri, {
             serverSelectionTimeoutMS: 3000,
         });
         console.log(`MongoDB Connected: ${conn.connection.host}`);
