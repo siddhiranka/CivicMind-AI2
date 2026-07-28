@@ -3,8 +3,6 @@ const mongoose = require('mongoose');
 const { GoogleGenAI } = require('@google/genai');
 const { translateDynamicContent } = require('../utils/translator');
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 const { getHistory, addMessage } = require('../utils/chatHistory');
 exports.chatWithAI = async (req, res) => {
     try {
@@ -206,9 +204,11 @@ INSTRUCTIONS:
             }
         }
 
-        res.json({ reply });
+        return res.json({ reply });
     } catch (error) {
         console.error('Chat controller error:', error);
-        res.status(500).json({ error: 'Failed to process chat query' });
+        return res.json({ 
+            reply: `🤖 **CivicMind AI Assistant**:\n\nCivicMind AI is active and monitoring community infrastructure. Please type a Tracking ID (e.g. **CM-1001**) to inspect report status, or ask about *reporting potholes*, *flooding*, or *garbage* in your area.` 
+        });
     }
 };

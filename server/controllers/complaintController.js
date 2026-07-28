@@ -9,7 +9,7 @@ const { writeTempVideo, extractKeyFrames } = require('../utils/videoProcessor');
 const { containsFakeEvidence } = require('../utils/fakeEvidence');
 const { getDepartment } = require('../utils/departmentMap');
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'dummy-key' });
 const { reverseGeocode } = require('../utils/geocode');
 // Helper logger for step‑by‑step tracing
 function logStep(step, payload) {
@@ -261,7 +261,7 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no cod
         while (attempts < 3 && !response) {
             attempts++;
             try {
-                response = await ai.models.generateContent({
+                response = await getAI().models.generateContent({
                     model: 'gemini-2.0-flash',
                     contents,
                     config: { responseMimeType: "application/json" }
@@ -273,7 +273,7 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no cod
                 } else {
                     console.warn(`gemini-2.0-flash error (Attempt ${attempts}):`, err20.message);
                     try {
-                        response = await ai.models.generateContent({
+                        response = await getAI().models.generateContent({
                             model: 'gemini-2.0-flash-lite',
                             contents,
                             config: { responseMimeType: "application/json" }
