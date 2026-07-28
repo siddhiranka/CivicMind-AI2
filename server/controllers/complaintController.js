@@ -26,21 +26,25 @@ function logStep(step, payload) {
 const fs = require('fs');
 const path = require('path');
 
-
-
 const COMPLAINTS_FILE = path.join(__dirname, '../data/complaints_cache.json');
+let DEFAULT_CACHE = [];
+try {
+    DEFAULT_CACHE = require('../data/complaints_cache.json');
+} catch (e) {
+    console.warn('DEFAULT_CACHE require fallback warning:', e.message);
+}
 
 function loadPersistedComplaints() {
     try {
         if (fs.existsSync(COMPLAINTS_FILE)) {
             const raw = fs.readFileSync(COMPLAINTS_FILE, 'utf8');
             const arr = JSON.parse(raw);
-            if (Array.isArray(arr)) return arr;
+            if (Array.isArray(arr) && arr.length > 0) return arr;
         }
     } catch (err) {
         console.warn('Notice loading complaints cache:', err.message);
     }
-    return [];
+    return Array.isArray(DEFAULT_CACHE) && DEFAULT_CACHE.length > 0 ? [...DEFAULT_CACHE] : [];
 }
 
 function savePersistedComplaints(arr) {

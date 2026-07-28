@@ -86,21 +86,32 @@ INSTRUCTIONS:
         if (apiKey && apiKey.length > 5) {
             try {
                 const aiInstance = new GoogleGenAI({ apiKey });
-                let response;
-                try {
-                    response = await aiInstance.models.generateContent({
-                        model: 'gemini-2.5-flash',
-                        contents: [{ text: prompt }]
-                    });
-                } catch (err20) {
-                    console.warn('gemini-2.5-flash failed in chat, trying gemini-2.0-flash:', err20.message);
+                let response = null;
+                let attempts = 0;
+
+                while (attempts < 3 && !response) {
+                    attempts++;
                     try {
                         response = await aiInstance.models.generateContent({
                             model: 'gemini-2.0-flash',
                             contents: [{ text: prompt }]
                         });
-                    } catch (err15) {
-                        console.warn('gemini-2.0-flash failed in chat:', err15.message);
+                    } catch (err20) {
+                        if (err20.status === 429 || err20.message?.includes('429') || err20.message?.includes('RESOURCE_EXHAUSTED')) {
+                            console.warn(`Chat Gemini 429 Rate Limit (Attempt ${attempts}/3). Waiting 1.5s...`);
+                            await new Promise(r => setTimeout(r, 1500));
+                        } else {
+                            console.warn(`gemini-2.0-flash failed in chat:`, err20.message);
+                            try {
+                                response = await aiInstance.models.generateContent({
+                                    model: 'gemini-2.0-flash-lite',
+                                    contents: [{ text: prompt }]
+                                });
+                            } catch (errLite) {
+                                console.warn('gemini-2.0-flash-lite failed in chat:', errLite.message);
+                                break;
+                            }
+                        }
                     }
                 }
 
