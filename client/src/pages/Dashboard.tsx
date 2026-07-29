@@ -16,7 +16,7 @@ const Dashboard = () => {
   const [selectedComplaint, setSelectedComplaint] = useState<any>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(() => !cachedComplaintsData);
-  const [visibleCount, setVisibleCount] = useState(10);
+  const [visibleCount, setVisibleCount] = useState(5);
   const navigate = useNavigate();
   const { user } = useAuth();
   const { t, i18n } = useTranslation();
@@ -202,7 +202,7 @@ const Dashboard = () => {
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold">{t('dashboard.recentReports')}</h3>
               <span className="text-xs font-bold px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full">
-                5 Recent Reports
+                {complaints.length} Total Reports
               </span>
             </div>
             
@@ -220,8 +220,8 @@ const Dashboard = () => {
                 actionPath={user?.role === 'citizen' ? '/report' : undefined}
               />
             ) : (
-              <div className="space-y-4 flex-1">
-                {complaints.slice(0, 5).map(c => (
+              <div className="space-y-4 overflow-y-auto pr-2 flex-1 max-h-[520px]">
+                {complaints.slice(0, visibleCount).map(c => (
                   <div 
                     key={c._id || c.complaintId} 
                     onClick={() => navigate(`/issue/${c.complaintId}`)}
@@ -258,6 +258,15 @@ const Dashboard = () => {
                     </div>
                   </div>
                 ))}
+
+                {visibleCount < complaints.length && (
+                  <button
+                    onClick={() => setVisibleCount(prev => prev + 5)}
+                    className="w-full py-3 bg-secondary/50 border border-border text-foreground hover:bg-secondary text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    Load More Reports ({complaints.length - visibleCount} remaining)
+                  </button>
+                )}
               </div>
             )}
           </div>
