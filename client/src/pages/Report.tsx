@@ -160,16 +160,18 @@ const Report = () => {
         throw new Error(`Server returned non-JSON response (${response.status})`);
       }
       
-      if (!response.ok) {
-        // Handle the new rejection case specifically
-        if (response.status === 400 && data.isCivicIssue === false) {
-          setRejectionData(data);
-          clearInterval(steps);
-          setAiStep(2); // Stop at "Civic Issue Check"
-          setStep(4); // Go to results page to show rejection
-          return;
-        }
-        throw new Error(data.error || 'Failed to process complaint');
+      if (!response.ok || data.status === 'rejected' || data.isCivicIssue === false) {
+        setRejectionData({
+          status: 'rejected',
+          isCivicIssue: false,
+          detectedContent: data.detectedContent || 'Non-civic / Promotional Content',
+          error: data.error || data.reason || 'This upload does not contain a real civic infrastructure issue. Please upload an original photo or video showing a real civic problem.'
+        });
+        clearInterval(steps);
+        setAiStep(2); // Stop at "Civic Issue Check"
+        setStep(4); // Go to results page to show rejection
+        setIsAnalyzing(false);
+        return;
       }
 
         setAiResult(data.aiAnalysis);
