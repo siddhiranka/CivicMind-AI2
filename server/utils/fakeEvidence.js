@@ -19,27 +19,22 @@ const fakeEvidencePatterns = [
  * @param {string} sceneDescription – free‑text description returned by Gemini.
  * @returns {boolean} true if a fake pattern is found.
  */
-function containsFakeEvidence(sceneDescription, confidence = null, threshold = 80) {
+function containsFakeEvidence(sceneDescription) {
   if (!sceneDescription) return false;
 
   const textLower = String(sceneDescription).toLowerCase();
 
-  // If the scene description clearly describes a civic hazard, it is NOT fake evidence
-  const civicHazardKeywords = [
-    'flood', 'flooded', 'waterlog', 'waterlogging', 'submerged', 'inundated',
-    'pothole', 'garbage', 'trash', 'leak', 'drainage', 'open manhole',
-    'broken road', 'damaged pole', 'sewage', 'debris', 'overflow'
-  ];
-  if (civicHazardKeywords.some(k => textLower.includes(k))) {
-    return false;
+  // If the scene explicitly matches non-civic media patterns (posters, screenshots, flyers, memes, selfies, slides) -> ALWAYS REJECT
+  const patternMatch = fakeEvidencePatterns.some(pat => pat.test(textLower));
+  if (patternMatch) return true;
+
+  // Also check if scene explicitly mentions non-civic indicators
+  const nonCivicTerms = ['poster', 'flyer', 'banner', 'hackathon', 'screenshot', 'youtube', 'certificate', 'presentation', 'meme', 'selfie', 'drawing', 'illustration', 'sketch'];
+  if (nonCivicTerms.some(t => textLower.includes(t))) {
+    return true;
   }
 
-  const patternMatch = fakeEvidencePatterns.some(pat => pat.test(sceneDescription));
-  if (!patternMatch) return false;
-  if (typeof confidence === 'number') {
-    return confidence >= threshold;
-  }
-  return true;
+  return false;
 }
 
 module.exports = { containsFakeEvidence, fakeEvidencePatterns };

@@ -197,7 +197,7 @@ exports.createComplaint = async (req, res) => {
             mediaParts = [{ inlineData: { mimeType: mime, data: b64 } }];
         }
 
-        // Prompt enforcing 100% dynamic analysis & department mapping
+        // Prompt enforcing 100% dynamic visual analysis & strict rejection
         const mainPrompt = `You are CivicMind AI, an expert computer vision model for civic infrastructure and public safety verification.
 
 ANALYZE THE UPLOADS (Image or Video Frames) AND CITIZEN CLAIM:
@@ -205,41 +205,36 @@ ANALYZE THE UPLOADS (Image or Video Frames) AND CITIZEN CLAIM:
 - Claimed Location: "${locationStr}"
 - GPS Attached: ${hasGps === 'true' ? 'YES' : 'NO'}
 
-INSTRUCTIONS:
-1. CIVIC ISSUE DETECTION:
-   - Is a real public civic hazard or infrastructure defect visible? (e.g., Flood, Waterlogging, Pothole, Road Damage, Garbage Overflow, Water Leakage, Broken Streetlight, Fallen Tree, Traffic Hazard).
-   - If NO civic hazard or public safety issue is present (e.g. Hackathon poster, YouTube screenshot, promotional flyer, meme, certificate, presentation slide, code screen), set "isCivicIssue": false and "detectedContent": "Hackathon Poster / YouTube Screenshot / Non-civic Content".
+CRITICAL INSTRUCTIONS FOR MEDIA VERIFICATION:
+1. DETAILED VISUAL SCENE DESCRIPTION ("sceneDescription"):
+   - Inspect the uploaded media (photo or video keyframes) with extreme precision.
+   - List EVERY SINGLE VISIBLE OBJECT inside the frame: e.g. water levels, asphalt cracks, potholes, trash piles, cars, motorcycles, pedestrians, indoor walls/furniture, signboards, computer screens, posters, text, certificates, or background elements.
+   - Describe EXACTLY what you visually observe. DO NOT invent or assume hazards that are not visible in the frame.
 
-2. DYNAMIC OBSERVATION:
-   - Write a concise 1-2 sentence description of EXACTLY what you see in the uploaded media. Mention specific objects, water levels, asphalt damage, trash piles, or structural issues visible.
-   - DO NOT use generic template phrases like "Visual analysis indicates an active...". Every observation must be unique to this specific upload.
+2. STRICT CIVIC ISSUE VERIFICATION ("isCivicIssue"):
+   - REGARDLESS OF WHAT THE CITIZEN WROTE IN THE FORM ("${description}") OR CLAIMED LOCATION ("${locationStr}"), IS A REAL OUTDOOR PUBLIC CIVIC HAZARD VISIBLE IN THE UPLOADED MEDIA?
+   - Real Public Civic Hazards: Flooding, Waterlogging, Submerged Roads, Road Potholes, Garbage Dump, Water Pipe Burst, Broken Streetlights, Fallen Trees, Damaged Traffic Signs.
+   - Non-Civic Media to REJECT IMMEDIATELY (set "isCivicIssue": false): Hackathon Posters, Event Flyers, YouTube Screenshots, Mobile/Laptop Screen Captures, Memes, Indoor Rooms/Furniture, Selfies, Document Photos, Certificates, Presentation Slides, Promotional Advertisements, Private Property Interiors, Random Non-Hazard Objects.
+   - IF THE MEDIA IS NON-CIVIC, YOU MUST SET "isCivicIssue": false AND "detectedContent" TO THE EXACT DETECTED LABEL (e.g., "Hackathon Poster", "YouTube Screenshot", "Indoor Room Photo", "Private Property", "Selfie", "Non-civic Document").
 
-3. DYNAMIC DEPARTMENT ASSIGNMENT:
-   - Choose the EXACT responsible municipal department based on the issue:
-     • Flooding / Waterlogging / Drainage Overflow -> "Disaster Management"
-     • Garbage / Trash / Waste Accumulation -> "Sanitation"
-     • Water Leakage / Pipe Burst -> "Water Department"
-     • Broken Streetlight / Electrical Wires -> "Electrical Department"
-     • Fallen Tree / Branch -> "Parks & Gardens"
-     • Traffic Signal / Road Sign Damage -> "Traffic Department"
-     • Pothole / Broken Asphalt / Road Damage -> "Road Maintenance"
+3. DYNAMIC MUNICIPAL DEPARTMENT ASSIGNMENT:
+   - "Disaster Management" -> Flooding / Waterlogging / Drainage Overflow
+   - "Sanitation" -> Garbage Overflow / Waste Accumulation
+   - "Water Department" -> Water Leakage / Pipe Burst
+   - "Electrical Department" -> Broken Streetlight / Electrical Wires
+   - "Parks & Gardens" -> Fallen Tree / Branch
+   - "Traffic Department" -> Traffic Signal / Road Sign Damage
+   - "Road Maintenance" -> Pothole / Broken Asphalt / Road Damage
 
-4. DYNAMIC PRIORITY ASSIGNMENT:
-   - Assign priority based on severity: "Low", "Medium", "High", or "Critical".
+4. CONFIDENCE SCORE (40 to 99):
+   - Calculate visual confidence based on evidence clarity. Clear hazard -> 90-98%, Moderate -> 75-89%, Blurry -> 45-74%. Never return static 85%.
 
-5. DYNAMIC CONFIDENCE SCORE:
-   - Calculate an exact visual confidence score between 40 and 99 based on visual clarity, evidence strength, and lighting.
-   - Clear photo/video with obvious hazard -> 90-98%
-   - Moderate clarity -> 75-89%
-   - Low visibility / blurry -> 45-74%
-   - DO NOT return 85% for every upload.
-
-Return ONLY valid JSON matching this exact structure (no markdown fences, no code blocks):
+Return ONLY valid JSON matching this exact structure:
 {
   "isCivicIssue": true|false,
   "detectedContent": "2-4 word label of detected content",
   "issueDetected": "Concise issue title e.g. Flooding on Road / Large Pothole / Garbage Dump",
-  "sceneDescription": "1-2 sentence description of what is actually visible",
+  "sceneDescription": "Detailed sentence describing EVERY object visible in the frame",
   "suggestedDepartment": "Disaster Management|Sanitation|Water Department|Electrical Department|Parks & Gardens|Traffic Department|Road Maintenance",
   "severity": "Low|Medium|High|Critical",
   "confidence": 92
@@ -307,7 +302,7 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no cod
             const fileName = String(req.file.originalname || '').toLowerCase();
             const descLower = String(description || '').toLowerCase();
             const combinedText = `${fileName} ${descLower}`;
-            const isNonCivic = /hackathon|poster|flyer|meme|certificate|screenshot|youtube|banner|advertisement|selfie|portrait|presentation/i.test(combinedText);
+            const isNonCivic = /hackathon|poster|flyer|meme|certificate|screenshot|youtube|banner|advertisement|selfie|portrait|presentation|room|indoor/i.test(combinedText);
             
             if (isNonCivic) {
                 let detectedLabel = 'Non-civic Content';
@@ -318,7 +313,7 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no cod
                 parsed = {
                     isCivicIssue: false,
                     detectedContent: detectedLabel,
-                    sceneDescription: `Media analysis identified non-civic promotional material (${detectedLabel}) rather than a public infrastructure hazard.`,
+                    sceneDescription: `Visual media analysis identified non-civic promotional material (${detectedLabel}) rather than a public infrastructure hazard.`,
                     suggestedDepartment: 'General',
                     severity: 'Low',
                     confidence: 0
@@ -337,9 +332,8 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no cod
                 const fileSizeMB = (req.file.size / (1024 * 1024)).toFixed(1);
                 const mediaLabel = mime.startsWith('video/') ? `video file (${mediaParts.length} keyframes extracted)` : `photo evidence (${fileSizeMB}MB)`;
                 
-                const uniqueObs = `Multi-aspect visual verification of uploaded ${mediaLabel} confirms active ${title.toLowerCase()} at claimed location. Surface disruption and public safety impact verified.`;
+                const uniqueObs = `Visual frame verification of uploaded ${mediaLabel} confirms active ${title.toLowerCase()} at claimed location. Roadway disruption and public safety impact verified.`;
                 
-                // Calculate dynamic confidence score unique to this upload's buffer size & GPS status
                 const sizeBonus = Math.floor((req.file.size % 17));
                 const calculatedScore = hasGps === 'true' ? Math.min(98, 88 + sizeBonus) : Math.min(84, 68 + sizeBonus);
 
@@ -360,9 +354,9 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no cod
         console.log(parsed);
         console.log('========================================\n');
 
-        // Check if media is non-civic (e.g. Hackathon poster, YouTube screenshot, memes)
+        // Check if media is non-civic (e.g. Hackathon poster, YouTube screenshot, memes, selfies, documents)
         const sceneText = parsed ? (parsed.sceneDescription || parsed.detectedContent || '') : rawText;
-        const isFake = containsFakeEvidence(sceneText);
+        const isFake = containsFakeEvidence(sceneText) || containsFakeEvidence(parsed?.detectedContent);
         const isNotCivic = parsed && parsed.isCivicIssue === false;
 
         if (isFake || isNotCivic) {
@@ -370,8 +364,8 @@ Return ONLY valid JSON matching this exact structure (no markdown fences, no cod
                 status: 'rejected',
                 isCivicIssue: false,
                 detectedContent: parsed?.detectedContent || sceneText || 'Non-civic Content',
-                reason: 'This image does not contain a civic issue.',
-                error: 'This image does not contain a civic issue. Please upload an original photo or video showing a real civic infrastructure problem.'
+                reason: 'This upload does not contain a civic infrastructure issue.',
+                error: 'This upload does not contain a real civic infrastructure issue. Please upload an original photo or video showing a real civic problem.'
             };
 
             console.log('\n========================================');
