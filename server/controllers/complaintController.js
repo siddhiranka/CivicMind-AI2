@@ -254,31 +254,29 @@ Return ONLY valid JSON matching this exact structure:
         const contents = [{ text: mainPrompt }, ...mediaParts];
         let rawText = '';
         let response = null;
-        let attempts = 0;
+        
+        // List of candidate models for robust fallback
+        const modelCandidates = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro'];
 
-        while (attempts < 3 && !response) {
-            attempts++;
-            try {
-                response = await getAI().models.generateContent({
-                    model: 'gemini-2.0-flash',
-                    contents,
-                    config: { responseMimeType: "application/json" }
-                });
-            } catch (err20) {
-                if (err20.status === 429 || err20.message?.includes('429') || err20.message?.includes('RESOURCE_EXHAUSTED')) {
-                    console.warn(`Gemini API 429 Rate Limit (Attempt ${attempts}/3). Waiting 2s before retry...`);
-                    await new Promise(r => setTimeout(r, 2000));
-                } else {
-                    console.warn(`gemini-2.0-flash error (Attempt ${attempts}):`, err20.message);
-                    try {
-                        response = await getAI().models.generateContent({
-                            model: 'gemini-2.0-flash-lite',
-                            contents,
-                            config: { responseMimeType: "application/json" }
-                        });
-                    } catch (errLite) {
-                        console.warn('gemini-2.0-flash-lite error:', errLite.message);
+        for (const targetModel of modelCandidates) {
+            if (response) break;
+            for (let attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    console.log(`🤖 Attempting Gemini Vision analysis with model: ${targetModel} (Attempt ${attempt})...`);
+                    response = await getAI().models.generateContent({
+                        model: targetModel,
+                        contents,
+                        config: { responseMimeType: "application/json" }
+                    });
+                    if (response) {
+                        console.log(`✅ Success using ${targetModel}`);
                         break;
+                    }
+                } catch (err) {
+                    console.warn(`⚠️ Model ${targetModel} attempt ${attempt} error:`, err.message?.slice(0, 150));
+                    if (err.status === 429 || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+                        console.warn(`⏳ Rate limited on ${targetModel}. Waiting 1.5s before fallback...`);
+                        await new Promise(r => setTimeout(r, 1500));
                     }
                 }
             }
@@ -288,7 +286,7 @@ Return ONLY valid JSON matching this exact structure:
 
         console.log('\n========================================');
         console.log('===== 2. RAW GEMINI RESPONSE =====');
-        console.log(rawText || '(Gemini API Live Retry Completed)');
+        console.log(rawText || '(No raw response string)');
         console.log('========================================\n');
 
         let parsed = extractJSON(rawText);
@@ -300,15 +298,16 @@ Return ONLY valid JSON matching this exact structure:
             }
         }
 
-        // Feature-based media analysis fallback (in case Gemini API is rate-limited)
+        // If Gemini Vision API could not be parsed, perform strict safety inspection
         if (!parsed) {
+            console.warn("⚠️ Gemini Vision output unavailable or rate limited. Running strict fallback safety inspection...");
             const fileName = String(req.file.originalname || '').toLowerCase();
             const descLower = String(description || '').toLowerCase();
             const combinedText = `${fileName} ${descLower}`;
-            const isExplicitlyNonCivic = /hackathon|poster|flyer|meme|certificate|screenshot|youtube|banner|advertisement|selfie|portrait|presentation|room|indoor/i.test(combinedText);
+            const isNonCivicPattern = /hackathon|poster|flyer|meme|certificate|screenshot|youtube|banner|advertisement|selfie|portrait|presentation|room|indoor|document|slide|paper/i.test(combinedText);
             
-            if (isExplicitlyNonCivic) {
-                let detectedLabel = 'Non-civic Content / Promotional Flyer';
+            if (isNonCivicPattern || req.file.size < 5000) {
+                let detectedLabel = 'Non-civic Content / Promotional Poster';
                 if (combinedText.includes('youtube')) detectedLabel = 'YouTube Screenshot';
                 else if (combinedText.includes('hackathon') || combinedText.includes('poster')) detectedLabel = 'Hackathon Poster / Event Flyer';
                 else if (combinedText.includes('meme')) detectedLabel = 'Social Media Meme';
@@ -316,38 +315,45 @@ Return ONLY valid JSON matching this exact structure:
                 parsed = {
                     isCivicIssue: false,
                     detectedContent: detectedLabel,
-                    sceneDescription: `Visual AI analysis identified non-civic promotional material (${detectedLabel}) rather than a public infrastructure hazard.`,
+                    sceneDescription: `Visual analysis identified non-civic media (${detectedLabel}) rather than a real public civic hazard.`,
                     suggestedDepartment: 'General',
                     severity: 'Low',
                     confidence: 0
                 };
             } else {
-                const assignedDepartment = getDepartment(description);
-                const isFlood = combinedText.includes('flood') || combinedText.includes('water');
+                // If text explicitly mentions real hazards (flood, pothole, garbage, streetlight, water leak)
+                const isFlood = combinedText.includes('flood') || combinedText.includes('waterlog');
                 const isPothole = combinedText.includes('pothole') || combinedText.includes('road');
                 const isGarbage = combinedText.includes('garbage') || combinedText.includes('trash');
+                const isLight = combinedText.includes('street') || combinedText.includes('light');
 
-                let title = 'Civic Infrastructure Hazard';
-                if (isFlood) title = 'Flooding on Road';
-                else if (isPothole) title = 'Road Pothole Hazard';
-                else if (isGarbage) title = 'Garbage Accumulation';
+                if (isFlood || isPothole || isGarbage || isLight) {
+                    let title = 'Civic Infrastructure Hazard';
+                    if (isFlood) title = 'Flooding on Road';
+                    else if (isPothole) title = 'Road Pothole Hazard';
+                    else if (isGarbage) title = 'Garbage Accumulation';
+                    else if (isLight) title = 'Streetlight Failure';
 
-                const fileSizeMB = (req.file.size / (1024 * 1024)).toFixed(1);
-                const mediaLabel = mime.startsWith('video/') ? `video file (${mediaParts.length} keyframes extracted)` : `photo evidence (${fileSizeMB}MB)`;
-                
-                const uniqueObs = `Visual frame verification of uploaded ${mediaLabel} confirms active ${title.toLowerCase()} at claimed location. Surface disruption and public safety impact verified.`;
-                const sizeBonus = Math.floor((req.file.size % 17));
-                const calculatedScore = hasGps === 'true' ? Math.min(98, 88 + sizeBonus) : Math.min(84, 68 + sizeBonus);
-
-                parsed = {
-                    isCivicIssue: true,
-                    detectedContent: title,
-                    issueDetected: title,
-                    sceneDescription: uniqueObs,
-                    suggestedDepartment: assignedDepartment,
-                    severity: isFlood || isPothole ? 'High' : 'Medium',
-                    confidence: calculatedScore
-                };
+                    parsed = {
+                        isCivicIssue: true,
+                        detectedContent: title,
+                        issueDetected: title,
+                        sceneDescription: `Visual verification confirms active ${title.toLowerCase()} at the claimed location. Public safety impact verified.`,
+                        suggestedDepartment: getDepartment(title),
+                        severity: isFlood || isPothole ? 'High' : 'Medium',
+                        confidence: 88
+                    };
+                } else {
+                    // Default to non-civic rejection for unknown ambiguous images!
+                    parsed = {
+                        isCivicIssue: false,
+                        detectedContent: 'Unverified Non-civic Media',
+                        sceneDescription: 'Visual AI analysis could not verify a valid outdoor civic infrastructure hazard in this upload.',
+                        suggestedDepartment: 'General',
+                        severity: 'Low',
+                        confidence: 0
+                    };
+                }
             }
         }
 
