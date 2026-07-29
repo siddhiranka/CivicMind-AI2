@@ -23,12 +23,18 @@ const Report = () => {
   const [gpsDetails, setGpsDetails] = useState<{lat: number, lng: number, accuracy: number, address: string} | null>(null);
   const [gpsStatus, setGpsStatus] = useState<'verified' | 'denied' | 'none'>('none');
   const [isDetectingGps, setIsDetectingGps] = useState(false);
+  const [locationMatchStatus, setLocationMatchStatus] = useState<'unverified' | 'matched' | 'mismatched' | 'denied'>('unverified');
+  const [locationMatchReason, setLocationMatchReason] = useState<string>('');
 
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (locationMatchStatus === 'mismatched') {
+      toast.error('Location Mismatch!', { description: 'Your current GPS location does not match the reported issue location. You cannot upload evidence.' });
+      return;
+    }
     if (e.target.files && e.target.files[0]) {
       const selected = e.target.files[0];
       if (selected.size > 50 * 1024 * 1024) {
@@ -43,6 +49,8 @@ const Report = () => {
   const handleDetectGps = () => {
     if (!("geolocation" in navigator)) {
       setGpsStatus('none');
+      setLocationMatchStatus('denied');
+      setLocationMatchReason("GPS Geolocation is not supported by your browser.");
       toast.error("GPS Not Supported", { description: "Your browser does not support Geolocation." });
       return;
     }
@@ -56,13 +64,19 @@ const Report = () => {
         const lng = position.coords.longitude;
         const accuracy = Math.round(position.coords.accuracy || 15);
 
+        let detectedCity = '';
+        let detectedArea = '';
         let reverseAddress = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+
         try {
           const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
           if (res.ok) {
             const data = await res.json();
             if (data.display_name) {
               reverseAddress = data.display_name;
+              const addr = data.address || {};
+              detectedCity = addr.city || addr.town || addr.village || addr.county || addr.state || '';
+              detectedArea = addr.suburb || addr.neighbourhood || addr.residential || addr.road || '';
             }
           }
         } catch (e) {
@@ -71,14 +85,44 @@ const Report = () => {
 
         setGpsDetails({ lat, lng, accuracy, address: reverseAddress });
         setGpsStatus('verified');
-        setLocationStr(prev => prev ? `${prev} (GPS Verified)` : reverseAddress);
+        
+        if (!locationStr.trim()) {
+          setLocationStr(reverseAddress);
+        }
+
+        // Perform GPS vs Entered Location Matching check
+        const enteredLower = locationStr.trim().toLowerCase();
+        const cityLower = detectedCity.toLowerCase();
+        const areaLower = detectedArea.toLowerCase();
+        const fullLower = reverseAddress.toLowerCase();
+
+        let isMatch = true;
+        if (enteredLower.length > 2) {
+          const words = enteredLower.split(/[\s,.-]+/);
+          isMatch = words.some(w => w.length > 2 && (fullLower.includes(w) || cityLower.includes(w) || areaLower.includes(w))) ||
+                    fullLower.includes(enteredLower) ||
+                    (Boolean(cityLower) && enteredLower.includes(cityLower)) ||
+                    (Boolean(areaLower) && enteredLower.includes(areaLower));
+        }
+
+        if (isMatch) {
+          setLocationMatchStatus('matched');
+          setLocationMatchReason(`✓ Live GPS Verified: You are physically at ${detectedCity || detectedArea || 'the reported site'}. Upload unlocked!`);
+          toast.success("GPS Verified & Location Matched!", { description: `You are at ${detectedCity || 'the reported location'}. Upload unlocked.` });
+        } else {
+          setLocationMatchStatus('mismatched');
+          setLocationMatchReason(`❌ Location Mismatch! Your live GPS coordinates (${reverseAddress.slice(0, 40)}...) do not match your entered location "${locationStr}". You must be physically at the reported location to upload evidence.`);
+          toast.error("Location Mismatch!", { description: `Your current GPS coordinates do not match "${locationStr}".` });
+        }
+
         setIsDetectingGps(false);
-        toast.success("GPS Verified!", { description: `Coordinates: ${lat.toFixed(4)}, ${lng.toFixed(4)} (±${accuracy}m)` });
       },
       (error) => {
         setIsDetectingGps(false);
         setGpsStatus('denied');
         setGpsDetails(null);
+        setLocationMatchStatus('denied');
+        setLocationMatchReason("❌ GPS Permission Denied! Please enable browser location permissions to verify physical presence.");
         toast.error("GPS Permission Denied", { description: "Location permission denied. Location could not be verified." });
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -370,12 +414,32 @@ const Report = () => {
                         />
                       </div>
 
-                      {gpsDetails && (
-                        <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-3">
-                          <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+                      {locationMatchStatus === 'matched' && (
+                        <div className="mt-3 p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center gap-3">
+                          <CheckCircle2 size={20} className="text-emerald-400 shrink-0" />
                           <div className="text-xs text-emerald-300">
-                            <span className="font-extrabold block">✓ Live GPS Signature Verified</span>
-                            <span>Lat: {gpsDetails.lat.toFixed(5)}, Lng: {gpsDetails.lng.toFixed(5)} (Accuracy: ±{gpsDetails.accuracy}m)</span>
+                            <span className="font-extrabold block">✓ Physical GPS Presence Verified</span>
+                            <span>{locationMatchReason}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {locationMatchStatus === 'mismatched' && (
+                        <div className="mt-3 p-3.5 bg-destructive/10 border border-destructive/30 rounded-2xl flex items-center gap-3">
+                          <XCircle size={20} className="text-destructive shrink-0" />
+                          <div className="text-xs text-destructive">
+                            <span className="font-extrabold block">❌ Location Mismatch Detected</span>
+                            <span>{locationMatchReason}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {locationMatchStatus === 'denied' && (
+                        <div className="mt-3 p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center gap-3">
+                          <AlertTriangle size={20} className="text-amber-400 shrink-0" />
+                          <div className="text-xs text-amber-300">
+                            <span className="font-extrabold block">⚠️ GPS Access Required</span>
+                            <span>{locationMatchReason || "Please click 'Detect Live GPS' to verify your physical location at the reported issue site."}</span>
                           </div>
                         </div>
                       )}
@@ -390,8 +454,13 @@ const Report = () => {
                       {t('report.backBtn', 'Back')}
                     </button>
                     <button
-                      disabled={!locationStr.trim()}
-                      onClick={() => setStep(3)}
+                      disabled={!locationStr.trim() || locationMatchStatus === 'mismatched'}
+                      onClick={() => {
+                        if (gpsStatus === 'none' && 'geolocation' in navigator) {
+                          handleDetectGps();
+                        }
+                        setStep(3);
+                      }}
                       className="w-full sm:w-auto px-8 py-4 bg-primary text-primary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-primary/90 hover:scale-[1.02] active:scale-95 disabled:opacity-40 disabled:hover:scale-100 transition-all shadow-xl shadow-primary/20"
                     >
                       {t('report.nextBtn', 'Next')} <ChevronRight size={20} />
@@ -416,6 +485,19 @@ const Report = () => {
                     <p className="text-muted-foreground text-sm sm:text-base leading-relaxed">
                       Snap a photo, upload an image, or record a video. AI vision will inspect your media for evidence verification.
                     </p>
+
+                    {/* Location Verification Warning Header */}
+                    {locationMatchStatus === 'mismatched' && (
+                      <div className="mt-4 p-4 bg-destructive/15 border border-destructive/40 rounded-2xl flex items-center gap-3">
+                        <XCircle size={24} className="text-destructive shrink-0" />
+                        <div>
+                          <h4 className="font-extrabold text-destructive text-sm">❌ Upload Disabled — Location Mismatch</h4>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Your GPS location does not match "{locationStr}". You must be physically at the reported location to upload evidence.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                     
                     <div className="mt-6 relative border-2 border-dashed border-border hover:border-primary/60 rounded-3xl h-64 sm:h-72 flex flex-col items-center justify-center overflow-hidden transition-all bg-secondary/20 cursor-pointer group">
                       <input
@@ -423,7 +505,7 @@ const Report = () => {
                         accept="image/png, image/jpeg, image/jpg, image/webp, video/mp4, video/quicktime, video/webm"
                         onChange={handleFileChange}
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-                        disabled={isAnalyzing}
+                        disabled={isAnalyzing || locationMatchStatus === 'mismatched'}
                       />
                       
                       {preview ? (
