@@ -273,6 +273,50 @@ const handleAction = async (newStatus: string) => {
                           "{complaint.originalDescription}"
                         </p>
                       </div>
+                      {/* Officer Assignment & Decision Card for Citizens */}
+                      {complaint.status !== 'Pending' && (
+                        <div className="p-4 bg-primary/10 border border-primary/30 rounded-2xl space-y-3">
+                          <div className="flex items-center justify-between border-b border-primary/20 pb-2">
+                            <div className="flex items-center gap-2 text-primary font-bold text-sm">
+                              <ShieldCheck size={18} />
+                              <span>Officer Status & Action</span>
+                            </div>
+                            <span className="px-2.5 py-0.5 text-[11px] font-extrabold uppercase bg-primary text-primary-foreground rounded-lg">
+                              {complaint.status}
+                            </span>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 gap-2 text-xs">
+                            {complaint.assignedOfficerName && (
+                              <div>
+                                <span className="text-muted-foreground font-semibold block">Assigned Officer:</span>
+                                <span className="font-bold text-foreground">{complaint.assignedOfficerName}</span>
+                              </div>
+                            )}
+                            {complaint.suggestedDepartment && (
+                              <div>
+                                <span className="text-muted-foreground font-semibold block">Assigned Department:</span>
+                                <span className="font-bold text-primary">{complaint.suggestedDepartment}</span>
+                              </div>
+                            )}
+                            {complaint.expectedCompletionDate && (
+                              <div>
+                                <span className="text-muted-foreground font-semibold block">Expected Completion:</span>
+                                <span className="font-bold text-foreground">{new Date(complaint.expectedCompletionDate).toLocaleDateString()}</span>
+                              </div>
+                            )}
+                            {(complaint.officerNotes || complaint.rejectionReason) && (
+                              <div className="pt-1">
+                                <span className="text-muted-foreground font-semibold block">Officer Notes / Remarks:</span>
+                                <p className="p-2.5 bg-background border border-border rounded-xl text-foreground font-medium italic mt-1">
+                                  "{complaint.officerNotes || complaint.rejectionReason}"
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Rejection Reason for Citizens */}
                       {complaint.status === 'Rejected' && complaint.rejectionReason && (
                         <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl">

@@ -570,7 +570,9 @@ exports.getComplaints = async (req, res) => {
         if (req.user && req.user.role === 'citizen') {
             resultComplaints = resultComplaints.map(c => {
                 const copy = { ...c };
-                delete copy.officerNotes;
+                if (copy.status === 'Rejected' && copy.officerNotes && !copy.rejectionReason) {
+                    copy.rejectionReason = copy.officerNotes;
+                }
                 delete copy.budgetEstimation;
                 delete copy.resourceAllocation;
                 delete copy.priorityScore;
@@ -589,26 +591,42 @@ exports.getComplaints = async (req, res) => {
 exports.updateStatus = async (req, res) => {
     try {
         const { status, officerNotes, suggestedDepartment, assignedOfficerName, expectedCompletionDate, budgetEstimation, resourceAllocation } = req.body;
+        const syncData = {
+            ...(status && { status }),
+            ...(officerNotes !== undefined && { officerNotes }),
+            ...(status === 'Rejected' && officerNotes ? { rejectionReason: officerNotes } : {}),
+            ...(suggestedDepartment !== undefined && { suggestedDepartment }),
+            ...(assignedOfficerName !== undefined && { assignedOfficerName }),
+            ...(expectedCompletionDate !== undefined && { expectedCompletionDate }),
+            ...(budgetEstimation !== undefined && { budgetEstimation }),
+            ...(resourceAllocation !== undefined && { resourceAllocation }),
+            ...(req.user && req.user.id && { officerId: req.user.id }),
+            ...(req.user && req.user.name && { officerName: req.user.name }),
+            ...(status && { reviewedAt: new Date() })
+        };
+
         const complaint = await Complaint.findByIdAndUpdate(
             req.params.id,
-            {
-                ...(status && { status }),
-                ...(officerNotes !== undefined && { officerNotes }),
-                ...(status === 'Rejected' && officerNotes ? { rejectionReason: officerNotes } : {}),
-                ...(suggestedDepartment !== undefined && { suggestedDepartment }),
-                ...(assignedOfficerName !== undefined && { assignedOfficerName }),
-                ...(expectedCompletionDate !== undefined && { expectedCompletionDate }),
-                ...(budgetEstimation !== undefined && { budgetEstimation }),
-                ...(resourceAllocation !== undefined && { resourceAllocation }),
-                // Synchronization fields
-                ...(req.user && req.user.id && { officerId: req.user.id }),
-                ...(req.user && req.user.name && { officerName: req.user.name }),
-                ...(status && { reviewedAt: new Date() })
-            },
+            syncData,
             { new: true }
         );
-        if (!complaint) return res.status(404).json({ error: 'Not found' });
-        res.json(complaint);
+
+        // Sync memory stores
+        const targetId = String(req.params.id);
+        const memIdx = memoryComplaints.findIndex(c => String(c._id) === targetId || String(c.complaintId) === targetId);
+        if (memIdx !== -1) {
+            memoryComplaints[memIdx] = { ...memoryComplaints[memIdx], ...syncData };
+            savePersistedComplaints(memoryComplaints);
+        }
+
+        const defIdx = DEFAULT_COMPLAINTS.findIndex(c => String(c._id) === targetId || String(c.complaintId) === targetId);
+        if (defIdx !== -1) {
+            DEFAULT_COMPLAINTS[defIdx] = { ...DEFAULT_COMPLAINTS[defIdx], ...syncData };
+        }
+
+        const resObj = complaint || (memIdx !== -1 ? memoryComplaints[memIdx] : (defIdx !== -1 ? DEFAULT_COMPLAINTS[defIdx] : null));
+        if (!resObj) return res.status(404).json({ error: 'Not found' });
+        res.json(resObj);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -625,12 +643,19 @@ exports.reviewComplaint = async (req, res) => {
             budgetEstimation,
             resourceAllocation 
         } = req.body;
-        // Synchronization fields
+        
         const syncFields = {
+            ...(status && { status }),
+            ...(officerNotes !== undefined && { officerNotes }),
+            ...(status === 'Rejected' && officerNotes ? { rejectionReason: officerNotes } : {}),
+            ...(suggestedDepartment !== undefined && { suggestedDepartment }),
+            ...(assignedOfficerName !== undefined && { assignedOfficerName }),
+            ...(expectedCompletionDate !== undefined && { expectedCompletionDate }),
+            ...(budgetEstimation !== undefined && { budgetEstimation }),
+            ...(resourceAllocation !== undefined && { resourceAllocation }),
             ...(req.user && req.user.id ? { officerId: req.user.id } : {}),
             ...(req.user && req.user.name ? { officerName: req.user.name } : {}),
-            ...(status ? { reviewedAt: new Date() } : {}),
-            ...(status === 'Rejected' && officerNotes ? { rejectionReason: officerNotes } : {})
+            ...(status ? { reviewedAt: new Date() } : {})
         };
         
         const validStatuses = ['Pending', 'Assigned', 'In Progress', 'Resolved', 'Rejected', 'Needs Manual Inspection', 'Needs More Evidence'];
@@ -640,22 +665,12 @@ exports.reviewComplaint = async (req, res) => {
 
         let complaint = null;
         try {
-            // Load existing complaint to capture previous status
             const existingComplaint = await Complaint.findById(req.params.id).lean();
             const previousStatus = existingComplaint ? existingComplaint.status : undefined;
             complaint = await Complaint.findByIdAndUpdate(
                 req.params.id,
                 {
-                    ...(status && { status }),
                     ...(previousStatus && { previousStatus }),
-                    ...(officerNotes !== undefined && { officerNotes }),
-                    ...(status === 'Rejected' && officerNotes ? { rejectionReason: officerNotes } : {}),
-                    ...(suggestedDepartment !== undefined && { suggestedDepartment }),
-                    ...(assignedOfficerName !== undefined && { assignedOfficerName }),
-                    ...(expectedCompletionDate !== undefined && { expectedCompletionDate }),
-                    ...(budgetEstimation !== undefined && { budgetEstimation }),
-                    ...(resourceAllocation !== undefined && { resourceAllocation }),
-                    // Sync fields
                     ...syncFields
                 },
                 { new: true }
@@ -664,15 +679,26 @@ exports.reviewComplaint = async (req, res) => {
             console.warn('DB update warning:', err.message);
         }
 
+        // Sync memory store
+        const targetId = String(req.params.id);
+        const memIdx = memoryComplaints.findIndex(c => String(c._id) === targetId || String(c.complaintId) === targetId);
+        if (memIdx !== -1) {
+            memoryComplaints[memIdx] = { ...memoryComplaints[memIdx], ...syncFields };
+            savePersistedComplaints(memoryComplaints);
+            if (!complaint) complaint = memoryComplaints[memIdx];
+        }
+
+        // Sync defaults
+        const defIdx = DEFAULT_COMPLAINTS.findIndex(c => String(c._id) === targetId || String(c.complaintId) === targetId);
+        if (defIdx !== -1) {
+            DEFAULT_COMPLAINTS[defIdx] = { ...DEFAULT_COMPLAINTS[defIdx], ...syncFields };
+            if (!complaint) complaint = DEFAULT_COMPLAINTS[defIdx];
+        }
+
         if (!complaint) {
-            // Find in defaults
-            const found = DEFAULT_COMPLAINTS.find(c => c._id === req.params.id || c.complaintId === req.params.id);
-            if (found) {
-                if (status) found.status = status;
-                if (officerNotes) found.officerNotes = officerNotes;
-                return res.json(found);
-            }
-            return res.status(200).json({ _id: req.params.id, status: status || 'Assigned' });
+            complaint = { _id: targetId, complaintId: targetId, ...syncFields };
+            memoryComplaints.unshift(complaint);
+            savePersistedComplaints(memoryComplaints);
         }
         
         res.json(complaint);
@@ -758,11 +784,9 @@ exports.trackComplaint = async (req, res) => {
 
         if (req.user && req.user.role === 'citizen') {
             const copy = { ...complaint };
-            // Preserve rejection reason if applicable
-            if (copy.status === 'Rejected' && copy.officerNotes) {
+            if (copy.status === 'Rejected' && copy.officerNotes && !copy.rejectionReason) {
                 copy.rejectionReason = copy.officerNotes;
             }
-            delete copy.officerNotes;
             delete copy.budgetEstimation;
             delete copy.resourceAllocation;
             delete copy.priorityScore;

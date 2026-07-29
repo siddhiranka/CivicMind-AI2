@@ -202,7 +202,7 @@ const Dashboard = () => {
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold">{t('dashboard.recentReports')}</h3>
               <span className="text-xs font-bold px-2.5 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full">
-                {complaints.length} Total Reports
+                5 Recent Reports
               </span>
             </div>
             
@@ -220,8 +220,8 @@ const Dashboard = () => {
                 actionPath={user?.role === 'citizen' ? '/report' : undefined}
               />
             ) : (
-              <div className="space-y-4 overflow-y-auto pr-2 flex-1 max-h-[520px]">
-                {complaints.slice(0, visibleCount).map(c => (
+              <div className="space-y-4 flex-1">
+                {complaints.slice(0, 5).map(c => (
                   <div 
                     key={c._id || c.complaintId} 
                     onClick={() => navigate(`/issue/${c.complaintId}`)}
@@ -235,27 +235,29 @@ const Dashboard = () => {
                         {c.severity}
                       </span>
                     </div>
-<div className="text-sm text-muted-foreground line-clamp-2 mb-2">{c.enhancedDescription || ''}</div>
+                    <div className="text-sm text-muted-foreground line-clamp-2 mb-2">{c.enhancedDescription || ''}</div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
                       <span className="truncate">{c.location?.address?.split(',')[0]}</span>
                       <span>•</span>
                       <span>{new Date(c.createdAt || Date.now()).toLocaleDateString()}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-primary">{c.suggestedDepartment || "General"}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-primary">{c.suggestedDepartment || "General"}</span>
+                        {c.status && c.status !== 'Pending' && (
+                          <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded ${
+                            c.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
+                            c.status === 'Rejected' ? 'bg-destructive/10 text-destructive border border-destructive/20' :
+                            'bg-primary/10 text-primary border border-primary/20'
+                          }`}>
+                            {c.status}
+                          </span>
+                        )}
+                      </div>
                       <ChevronRight size={14} className="text-muted-foreground" />
                     </div>
                   </div>
                 ))}
-
-                {visibleCount < complaints.length && (
-                  <button
-                    onClick={() => setVisibleCount(prev => prev + 10)}
-                    className="w-full py-3 bg-secondary/50 border border-border text-foreground hover:bg-secondary text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2"
-                  >
-                    Load More Previous Reports ({complaints.length - visibleCount} remaining)
-                  </button>
-                )}
               </div>
             )}
           </div>
