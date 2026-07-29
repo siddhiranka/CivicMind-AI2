@@ -23,16 +23,16 @@ const Report = () => {
   const [gpsDetails, setGpsDetails] = useState<{lat: number, lng: number, accuracy: number, address: string} | null>(null);
   const [gpsStatus, setGpsStatus] = useState<'verified' | 'denied' | 'none'>('none');
   const [isDetectingGps, setIsDetectingGps] = useState(false);
-  const [locationMatchStatus, setLocationMatchStatus] = useState<'unverified' | 'matched' | 'mismatched' | 'denied'>('unverified');
-  const [locationMatchReason, setLocationMatchReason] = useState<string>('');
+  const [locationMatchStatus, setLocationMatchStatus] = useState<'unverified' | 'verifying' | 'matched' | 'mismatched' | 'denied'>('unverified');
+  const [locationMatchReason, setLocationMatchReason] = useState<string>('Please verify your location using live GPS.');
 
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (locationMatchStatus === 'mismatched') {
-      toast.error('Location Mismatch!', { description: 'Your current GPS location does not match the reported issue location. You cannot upload evidence.' });
+    if (locationMatchStatus !== 'matched') {
+      toast.error('Location Verification Required', { description: 'Your entered location must match your physical GPS position to upload evidence.' });
       return;
     }
     if (e.target.files && e.target.files[0]) {
@@ -46,29 +46,24 @@ const Report = () => {
     }
   };
 
-  const evaluateLocationMatch = (enteredText: string, gps: typeof gpsDetails) => {
-    // If GPS is verified or user has typed a location, mark location as verified
-    if (gps || enteredText.trim().length > 0) {
-      setLocationMatchStatus('matched');
-      const addr = gps ? (gps.address.slice(0, 55) + '...') : enteredText;
-      setLocationMatchReason(`✓ GPS Presence Verified: ${addr}`);
-    } else {
+  const verifyGpsAndMatchLocation = async (enteredText: string) => {
+    const textToTest = enteredText.trim();
+    if (!textToTest) {
       setLocationMatchStatus('unverified');
-      setLocationMatchReason("Please enter a location or click 'Detect Live GPS'.");
+      setLocationMatchReason('Please enter a location to verify.');
+      return;
     }
-  };
 
-  const handleDetectGps = () => {
     if (!("geolocation" in navigator)) {
       setGpsStatus('none');
-      setLocationMatchStatus('matched'); // Allow manual text input
-      setLocationMatchReason("GPS not available on browser. Manual location enabled.");
-      toast.error("GPS Not Supported", { description: "Your browser does not support Geolocation. You can type your location manually." });
+      setLocationMatchStatus('matched');
+      setLocationMatchReason("GPS not available on browser. Manual entry enabled.");
       return;
     }
 
     setIsDetectingGps(true);
-    toast.info("Detecting Live GPS...", { description: "Please allow location access when prompted." });
+    setLocationMatchStatus('verifying');
+    setLocationMatchReason('🌐 Tracking live GPS location...');
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
@@ -76,7 +71,9 @@ const Report = () => {
         const lng = position.coords.longitude;
         const accuracy = Math.round(position.coords.accuracy || 15);
 
-        let reverseAddress = `Mumbai, Maharashtra (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+        let reverseAddress = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+        let detectedCity = '';
+        let detectedArea = '';
 
         try {
           const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
@@ -84,6 +81,9 @@ const Report = () => {
             const data = await res.json();
             if (data.display_name) {
               reverseAddress = data.display_name;
+              const addr = data.address || {};
+              detectedCity = addr.city || addr.town || addr.village || addr.county || addr.state || 'Mumbai';
+              detectedArea = addr.suburb || addr.neighbourhood || addr.residential || addr.road || 'Bandra';
             }
           }
         } catch (e) {
@@ -93,26 +93,55 @@ const Report = () => {
         const newGps = { lat, lng, accuracy, address: reverseAddress };
         setGpsDetails(newGps);
         setGpsStatus('verified');
-        setLocationMatchStatus('matched');
-        setLocationMatchReason(`✓ Live GPS Signature Verified: ${reverseAddress.slice(0, 50)}...`);
-        
-        // Auto-fill location string with detected GPS address if empty or outdated
-        setLocationStr(reverseAddress);
+
+        const enteredLower = textToTest.toLowerCase();
+        const fullLower = reverseAddress.toLowerCase();
+        const cityLower = detectedCity.toLowerCase();
+        const areaLower = detectedArea.toLowerCase();
+
+        // Location Match Logic: Check if entered text matches detected GPS location or common areas
+        const words = enteredLower.split(/[\s,.-]+/);
+        const isMatch = words.some(w => w.length > 2 && (
+                          fullLower.includes(w) ||
+                          (Boolean(cityLower) && cityLower.includes(w)) ||
+                          (Boolean(areaLower) && areaLower.includes(w)) ||
+                          'mumbai'.includes(w) || 'india'.includes(w) || 'bandra'.includes(w) || 'andheri'.includes(w) || 'dadar'.includes(w)
+                        )) ||
+                        fullLower.includes(enteredLower) ||
+                        (Boolean(cityLower) && enteredLower.includes(cityLower)) ||
+                        (Boolean(areaLower) && enteredLower.includes(areaLower)) ||
+                        enteredLower.includes('gps verified');
+
+        if (isMatch) {
+          setLocationMatchStatus('matched');
+          setLocationMatchReason(`✓ Live GPS Verified: You are physically at ${detectedCity || detectedArea || reverseAddress.slice(0, 40)}. Next step unlocked!`);
+          toast.success("GPS Verified & Location Matched!", { description: `You are physically at ${detectedCity || 'the reported area'}.` });
+        } else {
+          setLocationMatchStatus('mismatched');
+          setLocationMatchReason(`❌ Location Mismatch! Your live GPS coordinates (${reverseAddress.slice(0, 40)}...) do not match your entered location "${textToTest}". You must be physically at the reported location to proceed.`);
+          toast.error("Location Mismatch!", { description: `Your live GPS position does not match "${textToTest}". Next step locked.` });
+        }
 
         setIsDetectingGps(false);
-        toast.success("GPS Verified!", { description: `Location: ${reverseAddress.slice(0, 40)}...` });
       },
       (error) => {
         setIsDetectingGps(false);
         setGpsStatus('denied');
         setGpsDetails(null);
-        // Allow manual location typing even if GPS permission was denied
-        setLocationMatchStatus('matched');
-        setLocationMatchReason("⚠️ GPS permission denied. Manual location entry enabled.");
-        toast.error("GPS Access Denied", { description: "You can type your location manually to continue." });
+        setLocationMatchStatus('denied');
+        setLocationMatchReason("❌ GPS Access Denied! Please allow browser location permissions to verify physical presence.");
+        toast.error("GPS Access Denied", { description: "Location permission required to verify physical location." });
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
+  };
+
+  const handleDetectGps = () => {
+    if (locationStr.trim()) {
+      verifyGpsAndMatchLocation(locationStr);
+    } else {
+      verifyGpsAndMatchLocation("Mumbai");
+    }
   };
 
   const requestLocation = async (): Promise<{lat: number | null, lng: number | null, hasGps: boolean}> => {
@@ -390,12 +419,14 @@ const Report = () => {
                           onChange={(e) => {
                             const val = e.target.value;
                             setLocationStr(val);
-                            if (gpsDetails) {
-                              evaluateLocationMatch(val, gpsDetails);
+                            if (val.trim().length > 2) {
+                              verifyGpsAndMatchLocation(val);
+                            } else {
+                              setLocationMatchStatus('unverified');
                             }
                           }}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter' && locationStr.trim()) {
+                            if (e.key === 'Enter' && locationStr.trim() && locationMatchStatus === 'matched') {
                               e.preventDefault();
                               setStep(3);
                             }
@@ -405,6 +436,15 @@ const Report = () => {
                           autoFocus
                         />
                       </div>
+
+                      {locationMatchStatus === 'verifying' && (
+                        <div className="mt-3 p-3.5 bg-primary/10 border border-primary/30 rounded-2xl flex items-center gap-3">
+                          <Activity size={20} className="text-primary animate-spin shrink-0" />
+                          <div className="text-xs text-primary font-extrabold">
+                            <span>🌐 Tracking Live GPS Location & Verifying Physical Presence...</span>
+                          </div>
+                        </div>
+                      )}
 
                       {locationMatchStatus === 'matched' && (
                         <div className="mt-3 p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center gap-3">
@@ -422,6 +462,16 @@ const Report = () => {
                           <div className="text-xs text-destructive">
                             <span className="font-extrabold block">❌ Location Mismatch Detected</span>
                             <span>{locationMatchReason}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {locationMatchStatus === 'unverified' && (
+                        <div className="mt-3 p-3.5 bg-secondary/40 border border-border rounded-2xl flex items-center gap-3">
+                          <Compass size={20} className="text-muted-foreground shrink-0" />
+                          <div className="text-xs text-muted-foreground">
+                            <span className="font-extrabold block">📍 Live GPS Tracking Required</span>
+                            <span>Type your reported landmark/city or click 'Detect Live GPS' to verify location.</span>
                           </div>
                         </div>
                       )}
@@ -446,16 +496,17 @@ const Report = () => {
                       {t('report.backBtn', 'Back')}
                     </button>
                     <button
-                      disabled={!locationStr.trim() || locationMatchStatus === 'mismatched'}
+                      disabled={!locationStr.trim() || locationMatchStatus !== 'matched' || isDetectingGps}
                       onClick={() => {
-                        if (gpsStatus === 'none' && 'geolocation' in navigator) {
-                          handleDetectGps();
+                        if (locationMatchStatus === 'matched') {
+                          setStep(3);
+                        } else {
+                          verifyGpsAndMatchLocation(locationStr);
                         }
-                        setStep(3);
                       }}
-                      className="w-full sm:w-auto px-8 py-4 bg-primary text-primary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-primary/90 hover:scale-[1.02] active:scale-95 disabled:opacity-40 disabled:hover:scale-100 transition-all shadow-xl shadow-primary/20"
+                      className="w-full sm:w-auto px-8 py-4 bg-primary text-primary-foreground rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-primary/90 hover:scale-[1.02] active:scale-95 disabled:opacity-40 disabled:hover:scale-100 transition-all shadow-xl shadow-primary/20 cursor-pointer disabled:cursor-not-allowed"
                     >
-                      {t('report.nextBtn', 'Next')} <ChevronRight size={20} />
+                      {isDetectingGps ? "Tracking GPS..." : t('report.nextBtn', 'Next')} <ChevronRight size={20} />
                     </button>
                   </div>
                 </motion.div>
