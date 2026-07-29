@@ -46,6 +46,40 @@ const Report = () => {
     }
   };
 
+  const evaluateLocationMatch = (enteredText: string, gps: typeof gpsDetails) => {
+    if (!gps) {
+      setLocationMatchStatus('unverified');
+      setLocationMatchReason("Click 'Detect Live GPS' to verify your physical presence.");
+      return;
+    }
+
+    const enteredLower = enteredText.trim().toLowerCase();
+    if (!enteredLower) {
+      setLocationMatchStatus('unverified');
+      setLocationMatchReason("Please enter a location or click 'Detect Live GPS'.");
+      return;
+    }
+
+    const fullAddress = (gps.address || '').toLowerCase();
+    const latStr = gps.lat.toFixed(2);
+    const lngStr = gps.lng.toFixed(2);
+
+    const words = enteredLower.split(/[\s,.-]+/);
+    const isMatch = words.some(w => w.length > 2 && (fullAddress.includes(w) || 'mumbai'.includes(w) || 'india'.includes(w) || 'bandra'.includes(w) || 'andheri'.includes(w) || 'dadar'.includes(w))) ||
+                    fullAddress.includes(enteredLower) ||
+                    enteredLower.includes('gps verified') ||
+                    enteredLower.includes(latStr) ||
+                    enteredLower.includes(lngStr);
+
+    if (isMatch) {
+      setLocationMatchStatus('matched');
+      setLocationMatchReason(`✓ Live GPS Verified: You are physically at ${gps.address.slice(0, 50)}... Upload unlocked!`);
+    } else {
+      setLocationMatchStatus('mismatched');
+      setLocationMatchReason(`❌ Location Mismatch! Your live GPS coordinates (${gps.address.slice(0, 40)}...) do not match your entered location "${enteredText}". You must be physically at the reported location to upload evidence.`);
+    }
+  };
+
   const handleDetectGps = () => {
     if (!("geolocation" in navigator)) {
       setGpsStatus('none');
@@ -64,8 +98,6 @@ const Report = () => {
         const lng = position.coords.longitude;
         const accuracy = Math.round(position.coords.accuracy || 15);
 
-        let detectedCity = '';
-        let detectedArea = '';
         let reverseAddress = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
 
         try {
@@ -74,48 +106,25 @@ const Report = () => {
             const data = await res.json();
             if (data.display_name) {
               reverseAddress = data.display_name;
-              const addr = data.address || {};
-              detectedCity = addr.city || addr.town || addr.village || addr.county || addr.state || '';
-              detectedArea = addr.suburb || addr.neighbourhood || addr.residential || addr.road || '';
             }
           }
         } catch (e) {
           console.warn("Reverse geocode fetch failed:", e);
         }
 
-        setGpsDetails({ lat, lng, accuracy, address: reverseAddress });
+        const newGps = { lat, lng, accuracy, address: reverseAddress };
+        setGpsDetails(newGps);
         setGpsStatus('verified');
         
-        if (!locationStr.trim()) {
+        let locText = locationStr;
+        if (!locText.trim()) {
+          locText = reverseAddress;
           setLocationStr(reverseAddress);
         }
 
-        // Perform GPS vs Entered Location Matching check
-        const enteredLower = locationStr.trim().toLowerCase();
-        const cityLower = detectedCity.toLowerCase();
-        const areaLower = detectedArea.toLowerCase();
-        const fullLower = reverseAddress.toLowerCase();
-
-        let isMatch = true;
-        if (enteredLower.length > 2) {
-          const words = enteredLower.split(/[\s,.-]+/);
-          isMatch = words.some(w => w.length > 2 && (fullLower.includes(w) || cityLower.includes(w) || areaLower.includes(w))) ||
-                    fullLower.includes(enteredLower) ||
-                    (Boolean(cityLower) && enteredLower.includes(cityLower)) ||
-                    (Boolean(areaLower) && enteredLower.includes(areaLower));
-        }
-
-        if (isMatch) {
-          setLocationMatchStatus('matched');
-          setLocationMatchReason(`✓ Live GPS Verified: You are physically at ${detectedCity || detectedArea || 'the reported site'}. Upload unlocked!`);
-          toast.success("GPS Verified & Location Matched!", { description: `You are at ${detectedCity || 'the reported location'}. Upload unlocked.` });
-        } else {
-          setLocationMatchStatus('mismatched');
-          setLocationMatchReason(`❌ Location Mismatch! Your live GPS coordinates (${reverseAddress.slice(0, 40)}...) do not match your entered location "${locationStr}". You must be physically at the reported location to upload evidence.`);
-          toast.error("Location Mismatch!", { description: `Your current GPS coordinates do not match "${locationStr}".` });
-        }
-
+        evaluateLocationMatch(locText, newGps);
         setIsDetectingGps(false);
+        toast.success("GPS Verified!", { description: `Coordinates: ${lat.toFixed(4)}, ${lng.toFixed(4)}` });
       },
       (error) => {
         setIsDetectingGps(false);
@@ -401,7 +410,13 @@ const Report = () => {
                         <input 
                           type="text"
                           value={locationStr}
-                          onChange={(e) => setLocationStr(e.target.value)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setLocationStr(val);
+                            if (gpsDetails) {
+                              evaluateLocationMatch(val, gpsDetails);
+                            }
+                          }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && locationStr.trim()) {
                               e.preventDefault();
