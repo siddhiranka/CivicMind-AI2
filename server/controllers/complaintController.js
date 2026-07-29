@@ -200,22 +200,24 @@ exports.createComplaint = async (req, res) => {
         // Prompt enforcing 100% dynamic visual analysis & strict rejection
         const mainPrompt = `You are CivicMind AI, an expert computer vision model for civic infrastructure and public safety verification.
 
-ANALYZE THE UPLOADS (Image or Video Frames) AND CITIZEN CLAIM:
+ANALYZE THE UPLOADED MEDIA (Image or Video Frames) AND CITIZEN CLAIM:
 - Citizen Description Claim: "${description}"
 - Claimed Location: "${locationStr}"
 - GPS Attached: ${hasGps === 'true' ? 'YES' : 'NO'}
 
-CRITICAL INSTRUCTIONS FOR MEDIA VERIFICATION:
-1. DETAILED VISUAL SCENE DESCRIPTION ("sceneDescription"):
-   - Inspect the uploaded media (photo or video keyframes) with extreme precision.
-   - List EVERY SINGLE VISIBLE OBJECT inside the frame: e.g. water levels, asphalt cracks, potholes, trash piles, cars, motorcycles, pedestrians, indoor walls/furniture, signboards, computer screens, posters, text, certificates, or background elements.
-   - Describe EXACTLY what you visually observe. DO NOT invent or assume hazards that are not visible in the frame.
+CRITICAL INSTRUCTIONS FOR MULTIMODAL VERIFICATION:
 
-2. STRICT CIVIC ISSUE VERIFICATION ("isCivicIssue"):
-   - REGARDLESS OF WHAT THE CITIZEN WROTE IN THE FORM ("${description}") OR CLAIMED LOCATION ("${locationStr}"), IS A REAL OUTDOOR PUBLIC CIVIC HAZARD VISIBLE IN THE UPLOADED MEDIA?
-   - Real Public Civic Hazards: Flooding, Waterlogging, Submerged Roads, Road Potholes, Garbage Dump, Water Pipe Burst, Broken Streetlights, Fallen Trees, Damaged Traffic Signs.
-   - Non-Civic Media to REJECT IMMEDIATELY (set "isCivicIssue": false): Hackathon Posters, Event Flyers, YouTube Screenshots, Mobile/Laptop Screen Captures, Memes, Indoor Rooms/Furniture, Selfies, Document Photos, Certificates, Presentation Slides, Promotional Advertisements, Private Property Interiors, Random Non-Hazard Objects.
-   - IF THE MEDIA IS NON-CIVIC, YOU MUST SET "isCivicIssue": false AND "detectedContent" TO THE EXACT DETECTED LABEL (e.g., "Hackathon Poster", "YouTube Screenshot", "Indoor Room Photo", "Private Property", "Selfie", "Non-civic Document").
+1. DYNAMIC SCENE OBSERVATION ("sceneDescription"):
+   - Inspect the uploaded image or video keyframes carefully.
+   - Write a 2-3 sentence observation describing EXACTLY what you visually detect in this specific file.
+   - Mention specific objects, water levels, asphalt cracks, potholes, trash piles, broken streetlights, or pipe leaks visible in the media.
+   - DO NOT use any fixed template sentences like "Visual analysis indicates...". The observation MUST be generated fresh by you based strictly on what you see.
+
+2. STRICT CIVIC ISSUE VS NON-CIVIC REJECTION ("isCivicIssue"):
+   - Is a real public outdoor civic hazard visible in the uploaded media?
+   - Valid Civic Hazards: Flooding, Waterlogging, Submerged Road, Road Pothole, Road Damage, Garbage Accumulation, Water Pipe Burst, Broken Streetlight, Fallen Tree/Branch, Damaged Traffic Signs.
+   - Non-Civic Uploads to REJECT IMMEDIATELY (set "isCivicIssue": false): Hackathon Posters, Event Flyers, YouTube Screenshots, Mobile/Laptop Screenshots, Memes, Indoor Rooms/Furniture, Selfies, Document Photos, Certificates, Presentation Slides, Promotional Advertisements, Movie Posters.
+   - IF REJECTED: Set "isCivicIssue": false and set "detectedContent" to what you actually see in the frame (e.g. "YouTube Screenshot", "Hackathon Poster", "Selfie", "Indoor Furniture", "Movie Poster").
 
 3. DYNAMIC MUNICIPAL DEPARTMENT ASSIGNMENT:
    - "Disaster Management" -> Flooding / Waterlogging / Drainage Overflow
@@ -226,15 +228,16 @@ CRITICAL INSTRUCTIONS FOR MEDIA VERIFICATION:
    - "Traffic Department" -> Traffic Signal / Road Sign Damage
    - "Road Maintenance" -> Pothole / Broken Asphalt / Road Damage
 
-4. CONFIDENCE SCORE (40 to 99):
-   - Calculate visual confidence based on evidence clarity. Clear hazard -> 90-98%, Moderate -> 75-89%, Blurry -> 45-74%. Never return static 85%.
+4. DYNAMIC PRIORITY & CONFIDENCE:
+   - Severity: "Low", "Medium", "High", or "Critical".
+   - Confidence: Dynamic score between 45 and 98 based on visual evidence clarity.
 
 Return ONLY valid JSON matching this exact structure:
 {
   "isCivicIssue": true|false,
-  "detectedContent": "2-4 word label of detected content",
-  "issueDetected": "Concise issue title e.g. Flooding on Road / Large Pothole / Garbage Dump",
-  "sceneDescription": "Detailed sentence describing EVERY object visible in the frame",
+  "detectedContent": "Short label of detected content",
+  "issueDetected": "Concise issue title e.g. Flooding on Road / Road Pothole Hazard / Garbage Dump / Streetlight Failure",
+  "sceneDescription": "2-3 short, clear lines describing what is visually detected in this upload",
   "suggestedDepartment": "Disaster Management|Sanitation|Water Department|Electrical Department|Parks & Gardens|Traffic Department|Road Maintenance",
   "severity": "Low|Medium|High|Critical",
   "confidence": 92
