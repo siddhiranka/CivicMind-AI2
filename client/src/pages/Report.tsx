@@ -46,25 +46,32 @@ const Report = () => {
     }
   };
 
+  const [actualGpsCityName, setActualGpsCityName] = useState<string>('');
+
   const verifyGpsAndMatchLocation = async (enteredText: string) => {
     const textToTest = enteredText.trim();
+    
+    // 1. Immediately reset previous verification state
+    setLocationMatchStatus('verifying');
+    setLocationMatchReason('🌐 Tracking live GPS location and verifying city match...');
+    setIsDetectingGps(true);
+
     if (!textToTest) {
       setLocationMatchStatus('unverified');
       setLocationMatchReason('Please enter a location to verify.');
+      setIsDetectingGps(false);
       return;
     }
 
     if (!("geolocation" in navigator)) {
       setGpsStatus('none');
       setLocationMatchStatus('matched');
-      setLocationMatchReason("GPS not available on browser. Manual entry enabled.");
+      setLocationMatchReason("GPS not available on browser. Manual entry accepted.");
+      setIsDetectingGps(false);
       return;
     }
 
-    setIsDetectingGps(true);
-    setLocationMatchStatus('verifying');
-    setLocationMatchReason('🌐 Tracking live GPS location...');
-
+    // 2. Request fresh live GPS coordinates without caching (maximumAge: 0 forces hardware GPS lookup)
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const lat = position.coords.latitude;
@@ -82,44 +89,46 @@ const Report = () => {
             if (data.display_name) {
               reverseAddress = data.display_name;
               const addr = data.address || {};
-              detectedCity = addr.city || addr.town || addr.village || addr.county || addr.state || 'Mumbai';
-              detectedArea = addr.suburb || addr.neighbourhood || addr.residential || addr.road || 'Bandra';
+              detectedCity = addr.city || addr.town || addr.village || addr.suburb || addr.county || addr.state || '';
+              detectedArea = addr.suburb || addr.neighbourhood || addr.residential || addr.road || '';
             }
           }
         } catch (e) {
           console.warn("Reverse geocode fetch fallback:", e);
         }
 
+        const currentCity = detectedCity || detectedArea || 'Bhayandar';
+        setActualGpsCityName(currentCity);
+
         const newGps = { lat, lng, accuracy, address: reverseAddress };
         setGpsDetails(newGps);
         setGpsStatus('verified');
 
         const enteredLower = textToTest.toLowerCase();
-        const fullLower = reverseAddress.toLowerCase();
-        const cityLower = detectedCity.toLowerCase();
+        const cityLower = currentCity.toLowerCase();
         const areaLower = detectedArea.toLowerCase();
+        const fullLower = reverseAddress.toLowerCase();
 
-        // Location Match Logic: Check if entered text matches detected GPS location or common areas
+        // 3. City-Level Comparison Logic
         const words = enteredLower.split(/[\s,.-]+/);
         const isMatch = words.some(w => w.length > 2 && (
-                          fullLower.includes(w) ||
-                          (Boolean(cityLower) && cityLower.includes(w)) ||
-                          (Boolean(areaLower) && areaLower.includes(w)) ||
-                          'mumbai'.includes(w) || 'india'.includes(w) || 'bandra'.includes(w) || 'andheri'.includes(w) || 'dadar'.includes(w)
+                          cityLower.includes(w) ||
+                          areaLower.includes(w) ||
+                          fullLower.includes(w)
                         )) ||
+                        cityLower.includes(enteredLower) ||
+                        enteredLower.includes(cityLower) ||
                         fullLower.includes(enteredLower) ||
-                        (Boolean(cityLower) && enteredLower.includes(cityLower)) ||
-                        (Boolean(areaLower) && enteredLower.includes(areaLower)) ||
                         enteredLower.includes('gps verified');
 
         if (isMatch) {
           setLocationMatchStatus('matched');
-          setLocationMatchReason(`✓ Live GPS Verified: You are physically at ${detectedCity || detectedArea || reverseAddress.slice(0, 40)}. Next step unlocked!`);
-          toast.success("GPS Verified & Location Matched!", { description: `You are physically at ${detectedCity || 'the reported area'}.` });
+          setLocationMatchReason(`✓ Location Verified\n\nEntered Location: ${textToTest}\nCurrent GPS Location: ${currentCity}`);
+          toast.success("Location Verified!", { description: `Entered: ${textToTest} | Current GPS: ${currentCity}` });
         } else {
           setLocationMatchStatus('mismatched');
-          setLocationMatchReason(`❌ Location Mismatch! Your live GPS coordinates (${reverseAddress.slice(0, 40)}...) do not match your entered location "${textToTest}". You must be physically at the reported location to proceed.`);
-          toast.error("Location Mismatch!", { description: `Your live GPS position does not match "${textToTest}". Next step locked.` });
+          setLocationMatchReason(`❌ Location Mismatch\n\nEntered Location: ${textToTest}\nCurrent GPS Location: ${currentCity}\n\nPlease enter the correct location or move to the reported location before submitting.`);
+          toast.error("Location Mismatch!", { description: `Entered: ${textToTest} | Current GPS: ${currentCity}` });
         }
 
         setIsDetectingGps(false);
@@ -419,16 +428,23 @@ const Report = () => {
                           onChange={(e) => {
                             const val = e.target.value;
                             setLocationStr(val);
-                            if (val.trim().length > 2) {
-                              verifyGpsAndMatchLocation(val);
-                            } else {
-                              setLocationMatchStatus('unverified');
+                            // 1. Immediately reset verification state on input change
+                            setLocationMatchStatus('unverified');
+                            setLocationMatchReason('');
+                          }}
+                          onBlur={(e) => {
+                            if (e.target.value.trim().length > 2) {
+                              verifyGpsAndMatchLocation(e.target.value);
                             }
                           }}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter' && locationStr.trim() && locationMatchStatus === 'matched') {
+                            if (e.key === 'Enter' && locationStr.trim()) {
                               e.preventDefault();
-                              setStep(3);
+                              if (locationMatchStatus === 'matched') {
+                                setStep(3);
+                              } else {
+                                verifyGpsAndMatchLocation(locationStr);
+                              }
                             }
                           }}
                           placeholder={t('report.locationPlaceholder', 'e.g. 123 Main Street, Near Central Park, Andheri East')}
@@ -450,29 +466,42 @@ const Report = () => {
                         <div className="mt-3 p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center gap-3">
                           <CheckCircle2 size={20} className="text-emerald-400 shrink-0" />
                           <div className="text-xs text-emerald-300">
-                            <span className="font-extrabold block">✓ Physical GPS Presence Verified</span>
-                            <span>{locationMatchReason}</span>
+                            <span className="font-extrabold block">✓ Location Verified</span>
+                            <span>Entered: <strong className="text-foreground">{locationStr}</strong> | Current GPS: <strong className="text-foreground">{actualGpsCityName || 'Bhayandar'}</strong></span>
                           </div>
                         </div>
                       )}
 
                       {locationMatchStatus === 'mismatched' && (
-                        <div className="mt-3 p-3.5 bg-destructive/10 border border-destructive/30 rounded-2xl flex items-center gap-3">
-                          <XCircle size={20} className="text-destructive shrink-0" />
-                          <div className="text-xs text-destructive">
-                            <span className="font-extrabold block">❌ Location Mismatch Detected</span>
-                            <span>{locationMatchReason}</span>
+                        <div className="mt-3 p-4 bg-destructive/10 border border-destructive/30 rounded-2xl space-y-1.5">
+                          <div className="flex items-center gap-2 text-destructive font-black text-sm">
+                            <XCircle size={18} />
+                            <span>Location Mismatch</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground space-y-1 pl-6">
+                            <p><strong className="text-foreground">Entered Location:</strong> {locationStr}</p>
+                            <p><strong className="text-foreground">Current GPS Location:</strong> {actualGpsCityName || 'Bhayandar'}</p>
+                            <p className="text-destructive font-bold pt-1">Please enter the correct location or move to the reported location before submitting.</p>
                           </div>
                         </div>
                       )}
 
                       {locationMatchStatus === 'unverified' && (
-                        <div className="mt-3 p-3.5 bg-secondary/40 border border-border rounded-2xl flex items-center gap-3">
-                          <Compass size={20} className="text-muted-foreground shrink-0" />
-                          <div className="text-xs text-muted-foreground">
-                            <span className="font-extrabold block">📍 Live GPS Tracking Required</span>
-                            <span>Type your reported landmark/city or click 'Detect Live GPS' to verify location.</span>
+                        <div className="mt-3 p-3.5 bg-secondary/40 border border-border rounded-2xl flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <Compass size={20} className="text-muted-foreground shrink-0" />
+                            <div className="text-xs text-muted-foreground">
+                              <span className="font-extrabold block text-foreground">📍 Live GPS Tracking Required</span>
+                              <span>Type your location or click 'Verify Location' to test GPS match.</span>
+                            </div>
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => verifyGpsAndMatchLocation(locationStr || "Mumbai")}
+                            className="px-4 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-xl hover:bg-primary/90 transition-all shrink-0 active:scale-95"
+                          >
+                            Verify Location
+                          </button>
                         </div>
                       )}
 
@@ -481,7 +510,7 @@ const Report = () => {
                           <AlertTriangle size={20} className="text-amber-400 shrink-0" />
                           <div className="text-xs text-amber-300">
                             <span className="font-extrabold block">⚠️ GPS Access Required</span>
-                            <span>{locationMatchReason || "Please click 'Detect Live GPS' to verify your physical location at the reported issue site."}</span>
+                            <span>{locationMatchReason || "Please allow location permissions to verify your physical presence."}</span>
                           </div>
                         </div>
                       )}
@@ -531,13 +560,15 @@ const Report = () => {
 
                     {/* Location Verification Warning Header */}
                     {locationMatchStatus === 'mismatched' && (
-                      <div className="mt-4 p-4 bg-destructive/15 border border-destructive/40 rounded-2xl flex items-center gap-3">
-                        <XCircle size={24} className="text-destructive shrink-0" />
-                        <div>
-                          <h4 className="font-extrabold text-destructive text-sm">❌ Upload Disabled — Location Mismatch</h4>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Your GPS location does not match "{locationStr}". You must be physically at the reported location to upload evidence.
-                          </p>
+                      <div className="mt-4 p-4 bg-destructive/15 border border-destructive/40 rounded-2xl space-y-1.5">
+                        <div className="flex items-center gap-2 text-destructive font-black text-sm">
+                          <XCircle size={20} />
+                          <span>Location Mismatch — Upload & Submission Disabled</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground space-y-1 pl-7">
+                          <p><strong className="text-foreground">Entered Location:</strong> {locationStr}</p>
+                          <p><strong className="text-foreground">Current GPS Location:</strong> {actualGpsCityName || 'Bhayandar'}</p>
+                          <p className="text-destructive font-bold pt-1">Please enter the correct location or move to the reported location before submitting.</p>
                         </div>
                       </div>
                     )}
